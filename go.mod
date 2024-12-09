@@ -3,7 +3,6 @@ module github.com/castai/logging
 go 1.22.3
 
 require (
-	github.com/castai/kvisor v1.20.0
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/time v0.6.0
 )

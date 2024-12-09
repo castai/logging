@@ -5,61 +5,78 @@ import (
 	"log/slog"
 )
 
-type ExportFunc func(ctx context.Context, record slog.Record)
+type ExportHandlerConfig struct {
+	MinLevel   slog.Level // Only export logs for this min log level.
+	BufferSize int        // Logs channel size.
+}
 
-func NewExportHandler(ctx context.Context, next slog.Handler, cfg ExportConfig) slog.Handler {
-	handler := &ExportHandler{
-		next: next,
-		cfg:  cfg,
-		ch:   make(chan slog.Record, 1000),
+func NewExportHandler(cfg ExportHandlerConfig) *ExportHandler {
+	if cfg.BufferSize == 0 {
+		cfg.BufferSize = 1000
 	}
-	go handler.run(ctx)
 
+	handler := &ExportHandler{
+		cfg: cfg,
+		ch:  make(chan slog.Record, cfg.BufferSize),
+	}
 	return handler
 }
 
+// ExportHandler exports logs to separate channel available via Records()
 type ExportHandler struct {
 	next slog.Handler
-	cfg  ExportConfig
+	cfg  ExportHandlerConfig
 
 	ch chan slog.Record
 }
 
-func (e *ExportHandler) Enabled(ctx context.Context, level slog.Level) bool {
-	return e.next.Enabled(ctx, level)
+func (h *ExportHandler) Register(next slog.Handler) slog.Handler {
+	h.next = next
+	return h
 }
 
-func (e *ExportHandler) Handle(ctx context.Context, record slog.Record) error {
-	if record.Level >= e.cfg.MinLevel {
-		e.cfg.ExportFunc(ctx, record)
+func (h *ExportHandler) Records() <-chan slog.Record {
+	return h.ch
+}
+
+func (h *ExportHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	if h.next == nil {
+		return true
 	}
-
-	return e.next.Handle(ctx, record)
+	return h.next.Enabled(ctx, level)
 }
 
-func (e *ExportHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &ExportHandler{
-		next: e.next.WithAttrs(attrs),
-		cfg:  e.cfg,
-		ch:   e.ch,
-	}
-}
-
-func (e *ExportHandler) WithGroup(name string) slog.Handler {
-	return &ExportHandler{
-		next: e.next.WithGroup(name),
-		cfg:  e.cfg,
-		ch:   e.ch,
-	}
-}
-
-func (e *ExportHandler) run(ctx context.Context) {
-	for {
+func (h *ExportHandler) Handle(ctx context.Context, record slog.Record) error {
+	if record.Level >= h.cfg.MinLevel {
 		select {
-		case <-ctx.Done():
-			return
-		case record := <-e.ch:
-			e.cfg.ExportFunc(ctx, record)
+		case h.ch <- record:
+		default:
 		}
 	}
+	if h.next == nil {
+		return nil
+	}
+	return h.next.Handle(ctx, record)
+}
+
+func (h *ExportHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	clone := &ExportHandler{
+		cfg: h.cfg,
+		ch:  h.ch,
+	}
+	if h.next != nil {
+		clone.next = h.next.WithAttrs(attrs)
+	}
+	return clone
+}
+
+func (h *ExportHandler) WithGroup(name string) slog.Handler {
+	clone := &ExportHandler{
+		cfg: h.cfg,
+		ch:  h.ch,
+	}
+	if h.next != nil {
+		clone.next = h.next.WithGroup(name)
+	}
+	return clone
 }

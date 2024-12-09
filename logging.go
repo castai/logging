@@ -3,34 +3,22 @@ package logging
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"runtime"
 	"time"
-
-	"golang.org/x/time/rate"
 )
 
-type Config struct {
-	Ctx         context.Context
-	RateLimiter RateLimiterConfig
-	Level       slog.Level
-	AddSource   bool
-	Output      io.Writer
-	Export      ExportConfig
+type HandlerFunc func(next slog.Handler) slog.Handler
+
+func (h HandlerFunc) Register(next slog.Handler) slog.Handler {
+	return h(next)
 }
 
-type RateLimiterConfig struct {
-	Limit  rate.Limit
-	Burst  int
-	Inform bool
-}
-
-type ExportConfig struct {
-	ExportFunc ExportFunc
-	MinLevel   slog.Level
+// Handler allows to chain multiple handlers.
+// Order of execution is reverse to order of registration meaning first handler is executed last.
+type Handler interface {
+	Register(next slog.Handler) slog.Handler
 }
 
 func MustParseLevel(lvlStr string) slog.Level {
@@ -42,57 +30,31 @@ func MustParseLevel(lvlStr string) slog.Level {
 	return lvl
 }
 
-func init() {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{})))
-}
-
-func New(cfg *Config) *Logger {
-	out := cfg.Output
-	if out == nil {
-		out = os.Stdout
-	}
-	if cfg.Ctx == nil {
-		cfg.Ctx = context.Background()
-	}
-	var replace func(groups []string, a slog.Attr) slog.Attr
-	if cfg.AddSource {
-		replace = func(groups []string, a slog.Attr) slog.Attr {
-			// Remove the directory from the source's filename.
-			if a.Key == slog.SourceKey {
-				source := a.Value.Any().(*slog.Source)
-				source.File = filepath.Base(source.File)
-			}
-			return a
+func New(handlers ...Handler) *Logger {
+	if len(handlers) == 0 {
+		handlers = []Handler{
+			NewTextHandler(TextHandlerConfig{
+				Level:     slog.LevelInfo,
+				Output:    os.Stdout,
+				AddSource: false,
+			}),
 		}
 	}
 
-	// Initial logger.
-	var handler slog.Handler = slog.NewTextHandler(out, &slog.HandlerOptions{
-		AddSource:   cfg.AddSource,
-		Level:       cfg.Level,
-		ReplaceAttr: replace,
-	})
-
-	// Export logs handler.
-	if cfg.Export.ExportFunc != nil {
-		handler = NewExportHandler(cfg.Ctx, handler, cfg.Export)
+	// Chain handlers. Execution is in reverse order.
+	var slogHandler slog.Handler
+	for _, handler := range handlers {
+		slogHandler = handler.Register(slogHandler)
 	}
 
-	// Rate limiter handler.
-	if cfg.RateLimiter.Limit != 0 {
-		handler = NewRateLimiterHandler(cfg.Ctx, handler, cfg.RateLimiter)
-	}
-
-	log := slog.New(handler)
-	return &Logger{log: log}
+	log := slog.New(slogHandler)
+	return &Logger{Log: log}
 }
 
-func NewTestLog() *Logger {
-	return New(&Config{Level: slog.LevelDebug})
-}
-
+// Logger is a small wrapper around slog with some extra methods
+// for easier migration from logrus.
 type Logger struct {
-	log *slog.Logger
+	Log *slog.Logger
 }
 
 func (l *Logger) Error(msg string) {
@@ -134,29 +96,33 @@ func (l *Logger) Fatal(msg string) {
 
 func (l *Logger) IsEnabled(lvl slog.Level) bool {
 	ctx := context.Background()
-	return l.log.Handler().Enabled(ctx, lvl)
+	return l.Log.Handler().Enabled(ctx, lvl)
 }
 
 func (l *Logger) doLog(lvl slog.Level, msg string, args ...any) {
 	ctx := context.Background()
-	if !l.log.Handler().Enabled(ctx, lvl) {
+	if !l.Log.Handler().Enabled(ctx, lvl) {
 		return
 	}
 	var pcs [1]uintptr
 	runtime.Callers(3, pcs[:])
 	if len(args) > 0 {
 		r := slog.NewRecord(time.Now(), lvl, fmt.Sprintf(msg, args...), pcs[0])
-		_ = l.log.Handler().Handle(ctx, r) //nolint:contextcheck
+		_ = l.Log.Handler().Handle(ctx, r) //nolint:contextcheck
 	} else {
 		r := slog.NewRecord(time.Now(), lvl, msg, pcs[0])
-		_ = l.log.Handler().Handle(ctx, r) //nolint:contextcheck
+		_ = l.Log.Handler().Handle(ctx, r) //nolint:contextcheck
 	}
 }
 
 func (l *Logger) With(args ...any) *Logger {
-	return &Logger{log: l.log.With(args...)}
+	return &Logger{Log: l.Log.With(args...)}
 }
 
 func (l *Logger) WithField(k, v string) *Logger {
-	return &Logger{log: l.log.With(slog.String(k, v))}
+	return &Logger{Log: l.Log.With(slog.String(k, v))}
+}
+
+func (l *Logger) WithGroup(name string) *Logger {
+	return &Logger{Log: l.Log.WithGroup(name)}
 }
