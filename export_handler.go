@@ -49,6 +49,8 @@ func (h *ExportHandler) Enabled(ctx context.Context, level slog.Level) bool {
 func (h *ExportHandler) Handle(ctx context.Context, record slog.Record) error {
 	if record.Level >= h.cfg.MinLevel {
 		select {
+		case <-ctx.Done():
+			return ctx.Err()
 		case h.ch <- record:
 		default:
 		}

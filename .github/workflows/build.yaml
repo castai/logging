@@ -20,10 +20,10 @@ jobs:
         with:
           extra_args: --only-verified
 
-      - name: Setup Go 1.22
-        uses: actions/setup-go@v5
+      - name: Setup Go 1.23
+        uses: actions/setup-go@41dfa10bad2bb2ae585af6ee5bb4d7d973ad74ed # v5
         with:
-          go-version: '1.22.3'
+          go-version-file: "go.mod"
 
       - name: Run golangci-lint
         if: ${{ github.event_name == 'pull_request' && !contains(env.head_commit_message, '#skip-lint') }}
