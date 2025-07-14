@@ -94,6 +94,11 @@ func (l *Logger) Fatal(msg string) {
 	os.Exit(1)
 }
 
+func (l *Logger) Fatalf(msg string, a ...any) {
+	l.doLog(slog.LevelError, msg, a...) //nolint:govet
+	os.Exit(1)
+}
+
 func (l *Logger) IsEnabled(lvl slog.Level) bool {
 	ctx := context.Background()
 	return l.Log.Handler().Enabled(ctx, lvl)
