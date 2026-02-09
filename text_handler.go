@@ -7,6 +7,12 @@ import (
 	"path/filepath"
 )
 
+var DefaultTextHandlerConfig = TextHandlerConfig{
+	Level:     MustParseLevel("INFO"),
+	Output:    os.Stdout,
+	AddSource: true,
+}
+
 type TextHandlerConfig struct {
 	Level     slog.Level
 	Output    io.Writer

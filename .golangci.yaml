@@ -1,7 +1,8 @@
+version: 2
+
 linters:
   disable:
     - wrapcheck
-    - err113
     - contextcheck
     - exhaustive
     - protogetter
@@ -16,4 +17,3 @@ run:
 issues:
   exclude-dirs:
     - .github
-
