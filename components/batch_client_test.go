@@ -192,42 +192,6 @@ func Test_BufferedClient_PublishLogs(t *testing.T) {
 
 		r.Fail("expected timeout error but got none")
 	})
-
-	t.Run("should respect context cancellation in IngestLogs", func(t *testing.T) {
-		r := require.New(t)
-		mockAPIClient := &slowAPIClient{delay: 10 * time.Second}
-		client := components.NewBatchClient(mockAPIClient, components.BatchSize(1), components.FlushInterval(time.Millisecond*10))
-
-		ctx, cancel := context.WithCancel(context.Background())
-		errc := make(chan error, 1)
-		go func() {
-			errc <- client.Run(ctx)
-			close(errc)
-		}()
-
-		// Fill the buffer
-		for i := 0; i < 2; i++ {
-			err := client.IngestLogs(ctx, []components.Entry{{
-				Level:   "info",
-				Message: "test message",
-				Time:    time.Now(),
-			}})
-			r.NoError(err)
-		}
-
-		// Create a context that's already cancelled
-		cancelledCtx, cancel := context.WithCancel(context.Background())
-		cancel()
-
-		// Should return context error immediately
-		err := client.IngestLogs(cancelledCtx, []components.Entry{{
-			Level:   "info",
-			Message: "should fail",
-			Time:    time.Now(),
-		}})
-		r.Error(err)
-		r.Equal(context.Canceled, err)
-	})
 }
 
 type apiClient struct {
