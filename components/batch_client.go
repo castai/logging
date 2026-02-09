@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log"
-	"sync"
 	"time"
 )
 
@@ -38,7 +37,6 @@ type BatchClient struct {
 	buffer chan Entry
 	client APIClient
 	cfg    BatchClientConfig
-	wg     sync.WaitGroup
 }
 
 func NewBatchClient(client APIClient, opts ...func(*BatchClientConfig)) *BatchClient {
@@ -81,9 +79,6 @@ func (b *BatchClient) Run(ctx context.Context) error {
 }
 
 func (b *BatchClient) run(ctx context.Context) error {
-	b.wg.Add(1)
-	defer b.wg.Done()
-
 	ticker := time.NewTicker(b.cfg.FlushInterval)
 	defer ticker.Stop()
 
