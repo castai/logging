@@ -19,12 +19,11 @@ import (
 type LogLevel string
 
 const (
-	LogLevelLOGLEVELDEBUG   LogLevel = "LOG_LEVEL_DEBUG"
-	LogLevelLOGLEVELERROR   LogLevel = "LOG_LEVEL_ERROR"
-	LogLevelLOGLEVELFATAL   LogLevel = "LOG_LEVEL_FATAL"
-	LogLevelLOGLEVELINFO    LogLevel = "LOG_LEVEL_INFO"
-	LogLevelLOGLEVELUNKNOWN LogLevel = "LOG_LEVEL_UNKNOWN"
-	LogLevelLOGLEVELWARNING LogLevel = "LOG_LEVEL_WARNING"
+	LogLevelDebug   LogLevel = "LOG_LEVEL_DEBUG"
+	LogLevelInfo    LogLevel = "LOG_LEVEL_INFO"
+	LogLevelWarning LogLevel = "LOG_LEVEL_WARNING"
+	LogLevelError   LogLevel = "LOG_LEVEL_ERROR"
+	LogLevelUnknown LogLevel = "LOG_LEVEL_UNKNOWN"
 )
 
 type IngestLogsRequest struct {

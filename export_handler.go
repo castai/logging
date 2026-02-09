@@ -162,14 +162,14 @@ func addAttrToMap(m map[string]string, attr slog.Attr, groups []string) {
 func mapSlogLevel(level slog.Level) string {
 	switch {
 	case level >= slog.LevelError:
-		return string(components.LogLevelLOGLEVELERROR)
+		return string(components.LogLevelError)
 	case level >= slog.LevelWarn:
-		return string(components.LogLevelLOGLEVELWARNING)
+		return string(components.LogLevelWarning)
 	case level >= slog.LevelInfo:
-		return string(components.LogLevelLOGLEVELINFO)
+		return string(components.LogLevelInfo)
 	case level >= slog.LevelDebug:
-		return string(components.LogLevelLOGLEVELDEBUG)
+		return string(components.LogLevelDebug)
 	default:
-		return string(components.LogLevelLOGLEVELUNKNOWN)
+		return string(components.LogLevelUnknown)
 	}
 }
