@@ -1,19 +1,54 @@
-version: 2
-
-linters:
-  disable:
-    - wrapcheck
-    - contextcheck
-    - exhaustive
-    - protogetter
-  presets:
-    - bugs
-    - error
-    - unused
-
+version: "2"
 run:
   tests: false
+linters:
+  enable:
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - durationcheck
+    - errchkjson
+    - errorlint
+    - gocheckcompilerdirectives
+    - gochecksumtype
+    - gosec
+    - gosmopolitan
+    - loggercheck
+    - makezero
+    - musttag
+    - nilerr
+    - nilnesserr
+    - noctx
+    - reassign
+    - recvcheck
+    - rowserrcheck
+    - spancheck
+    - sqlclosecheck
+    - testifylint
+    - unparam
+    - zerologlint
+  disable:
+    - contextcheck
+    - err113
+    - exhaustive
+    - protogetter
+    - wrapcheck
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - .github
+      - .claude
 
-issues:
-  exclude-dirs:
-    - .github
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
