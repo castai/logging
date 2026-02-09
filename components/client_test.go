@@ -301,6 +301,113 @@ func TestClient_IngestLogs(t *testing.T) {
 		require.Empty(t, receivedPayload.Entries)
 	})
 
+	t.Run("should retry on server errors (5xx)", func(t *testing.T) {
+		attemptCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			attemptCount++
+			if attemptCount < 3 {
+				// First 2 attempts fail with 500
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("server error"))
+			} else {
+				// Third attempt succeeds
+				w.WriteHeader(http.StatusOK)
+			}
+		}))
+		defer server.Close()
+
+		client, err := NewAPIClient(Config{
+			APIBaseURL: server.URL,
+			APIKey:     "test-api-key",
+			ClusterID:  "cluster-123",
+			Component:  "test-component",
+			Version:    "v1.0.0",
+			MaxRetries: 3, // Allow up to 3 retries
+		})
+		require.NoError(t, err)
+
+		entries := []Entry{{Level: "info", Message: "test", Time: time.Now()}}
+		err = client.IngestLogs(context.Background(), entries)
+		require.NoError(t, err)
+		require.Equal(t, 3, attemptCount, "should have retried 2 times before succeeding on 3rd attempt")
+	})
+
+	t.Run("should not retry on client errors (4xx)", func(t *testing.T) {
+		attemptCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			attemptCount++
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("bad request"))
+		}))
+		defer server.Close()
+
+		client, err := NewAPIClient(Config{
+			APIBaseURL: server.URL,
+			APIKey:     "test-api-key",
+			ClusterID:  "cluster-123",
+			Component:  "test-component",
+			Version:    "v1.0.0",
+			MaxRetries: 3,
+		})
+		require.NoError(t, err)
+
+		entries := []Entry{{Level: "info", Message: "test", Time: time.Now()}}
+		err = client.IngestLogs(context.Background(), entries)
+		require.Error(t, err)
+		require.Equal(t, 1, attemptCount, "should not retry on 4xx errors")
+		require.Contains(t, err.Error(), "400")
+	})
+
+	t.Run("should respect max retries", func(t *testing.T) {
+		attemptCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			attemptCount++
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("server error"))
+		}))
+		defer server.Close()
+
+		client, err := NewAPIClient(Config{
+			APIBaseURL: server.URL,
+			APIKey:     "test-api-key",
+			ClusterID:  "cluster-123",
+			Component:  "test-component",
+			Version:    "v1.0.0",
+			MaxRetries: 2,
+		})
+		require.NoError(t, err)
+
+		entries := []Entry{{Level: "info", Message: "test", Time: time.Now()}}
+		err = client.IngestLogs(context.Background(), entries)
+		require.Error(t, err)
+		require.Equal(t, 3, attemptCount, "should try initial + 2 retries = 3 attempts")
+		require.Contains(t, err.Error(), "500")
+	})
+
+	t.Run("should work with disabled retries", func(t *testing.T) {
+		attemptCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			attemptCount++
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		client, err := NewAPIClient(Config{
+			APIBaseURL: server.URL,
+			APIKey:     "test-api-key",
+			ClusterID:  "cluster-123",
+			Component:  "test-component",
+			Version:    "v1.0.0",
+			MaxRetries: -1, // No retries
+		})
+		require.NoError(t, err)
+
+		entries := []Entry{{Level: "info", Message: "test", Time: time.Now()}}
+		err = client.IngestLogs(context.Background(), entries)
+		require.Error(t, err)
+		require.Equal(t, 1, attemptCount, "should only try once with 0 retries")
+	})
+
 	t.Run("should compress payload with gzip", func(t *testing.T) {
 		var compressedSize int
 		var decompressedSize int

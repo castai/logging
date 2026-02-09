@@ -53,28 +53,32 @@ type APIClient interface {
 }
 
 type Config struct {
-	APIBaseURL string
-	APIKey     string
-	ClusterID  string
-	Component  string
-	Version    string
-	TLSCert    string
+	APIBaseURL          string
+	APIKey              string
+	ClusterID           string
+	Component           string
+	Version             string
+	TLSCert             string
+	MaxRetries          int // Number of retries on failure (-1 = no retries)
+	MaxRetryBackoffWait time.Duration
 }
 
 var _ APIClient = (*APIClientImpl)(nil)
 
 type APIClientImpl struct {
 	httpClient *http.Client
-	clusterID  string
-	component  string
-	version    string
-	baseURL    string
-	apiKey     string
+	cfg        Config
 }
 
 func NewAPIClient(cfg Config) (*APIClientImpl, error) {
 	if err := validateConfig(cfg); err != nil {
 		return nil, err
+	}
+	if cfg.MaxRetries == 0 {
+		cfg.MaxRetries = 3
+	}
+	if cfg.MaxRetryBackoffWait == 0 {
+		cfg.MaxRetryBackoffWait = 5 * time.Second
 	}
 
 	httpClient, err := createHTTPClient(cfg.TLSCert)
@@ -82,12 +86,8 @@ func NewAPIClient(cfg Config) (*APIClientImpl, error) {
 		return nil, err
 	}
 	return &APIClientImpl{
-		baseURL:    cfg.APIBaseURL,
-		apiKey:     cfg.APIKey,
+		cfg:        cfg,
 		httpClient: httpClient,
-		clusterID:  cfg.ClusterID,
-		component:  cfg.Component,
-		version:    cfg.Version,
 	}, nil
 }
 
@@ -112,36 +112,87 @@ func validateConfig(cfg Config) error {
 
 func (a *APIClientImpl) IngestLogs(ctx context.Context, entries []Entry) error {
 	payload := &IngestLogsRequest{
-		Version: a.version,
+		Version: a.cfg.Version,
 		Entries: entries,
 	}
 
-	// Encode JSON.
-	var jsonBuf bytes.Buffer
-	if err := json.NewEncoder(&jsonBuf).Encode(payload); err != nil {
-		return err
+	jsonBytes, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshaling ingest logs request: %w", err)
 	}
 
-	// Compress with gzip using pooled writer.
+	maxRetries := a.cfg.MaxRetries
+	backoff := 100 * time.Millisecond
+	var lastErr error
+	if maxRetries < 0 {
+		maxRetries = 0
+	}
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			waitTime := backoff * time.Duration(1<<attempt-1)
+			if waitTime > a.cfg.MaxRetryBackoffWait {
+				waitTime = a.cfg.MaxRetryBackoffWait
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(waitTime):
+			}
+		}
+
+		err := a.doIngestRequest(ctx, jsonBytes)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+
+		if !a.shouldRetry(err, attempt, maxRetries) {
+			return err
+		}
+	}
+	return fmt.Errorf("ingest logs failed after %d retries: %w", maxRetries, lastErr)
+}
+
+func (a *APIClientImpl) shouldRetry(err error, attempt, maxRetries int) bool {
+	if attempt >= maxRetries {
+		return false
+	}
+	var httpErr *httpError
+	if errors.As(err, &httpErr) {
+		return httpErr.statusCode >= 500
+	}
+	return true
+}
+
+type httpError struct {
+	statusCode int
+	message    string
+}
+
+func (e *httpError) Error() string {
+	return e.message
+}
+
+func (a *APIClientImpl) doIngestRequest(ctx context.Context, jsonBytes []byte) error {
 	var compressedBuf bytes.Buffer
 	gzipWriter := gzipWriterPool.Get().(*gzip.Writer)
 	defer gzipWriterPool.Put(gzipWriter)
 
 	gzipWriter.Reset(&compressedBuf)
-	if _, err := gzipWriter.Write(jsonBuf.Bytes()); err != nil {
+	if _, err := gzipWriter.Write(jsonBytes); err != nil {
 		return err
 	}
 	if err := gzipWriter.Close(); err != nil {
 		return err
 	}
 
-	endpoint := fmt.Sprintf("%s/v1/clusters/%s/components/%s/logs", a.baseURL, a.clusterID, a.component)
+	endpoint := fmt.Sprintf("%s/v1/clusters/%s/components/%s/logs", a.cfg.APIBaseURL, a.cfg.ClusterID, a.cfg.Component)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, &compressedBuf)
 	if err != nil {
 		return err
 	}
 
-	req.Header.Set(headerAPIKey, a.apiKey)
+	req.Header.Set(headerAPIKey, a.cfg.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Encoding", "gzip")
 
@@ -150,9 +201,13 @@ func (a *APIClientImpl) IngestLogs(ctx context.Context, entries []Entry) error {
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
+
 	if resp.StatusCode != http.StatusOK {
 		respMsg, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("ingest logs failed: expected status %d, got %d: %v", http.StatusOK, resp.StatusCode, string(respMsg))
+		return &httpError{
+			statusCode: resp.StatusCode,
+			message:    fmt.Sprintf("ingest logs failed: expected status %d, got %d: %v", http.StatusOK, resp.StatusCode, string(respMsg)),
+		}
 	}
 	return nil
 }
