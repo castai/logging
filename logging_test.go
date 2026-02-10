@@ -70,7 +70,7 @@ func TestLogger(t *testing.T) {
 		r := require.New(t)
 		var buf bytes.Buffer
 		log := logging.New(logging.NewTextHandler(logging.TextHandlerConfig{
-			Level:     logging.MustParseLevel("DEBUG"),
+			Level:     logging.MustParseLevel("debug"),
 			Output:    io.MultiWriter(&buf, os.Stdout),
 			AddSource: false,
 		}))
@@ -79,9 +79,9 @@ func TestLogger(t *testing.T) {
 		serverLog := log.WithField("component", "server")
 		serverLog.Info("with component")
 		serverLog.Info("more server logs")
-		r.Contains(buf.String(), `level=ERROR msg="something wrong: ups"`)
-		r.Contains(buf.String(), `level=INFO msg="with component" component=server`)
-		r.Contains(buf.String(), `level=INFO msg="more server logs" component=server`)
+		r.Contains(buf.String(), `level=error msg="something wrong: ups"`)
+		r.Contains(buf.String(), `level=info msg="with component" component=server`)
+		r.Contains(buf.String(), `level=info msg="more server logs" component=server`)
 	})
 
 	t.Run("chain handlers", func(t *testing.T) {
@@ -107,7 +107,7 @@ func TestLogger(t *testing.T) {
 		log.Info("msg")
 		log.WithField("k", "v").Debug("msg2")
 		log.WithGroup("group").Debug("msg3")
-		r.Contains(buf.String(), `level=INFO msg="msg custom 3 custom 2 custom 1"`)
+		r.Contains(buf.String(), `level=info msg="msg custom 3 custom 2 custom 1"`)
 	})
 }
 
