@@ -20,17 +20,18 @@ jobs:
         with:
           extra_args: --only-verified
 
-      - name: Setup Go 1.23
-        uses: actions/setup-go@41dfa10bad2bb2ae585af6ee5bb4d7d973ad74ed # v5
+      - name: Setup Go
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
         with:
           go-version-file: "go.mod"
 
       - name: Run golangci-lint
         if: ${{ github.event_name == 'pull_request' && !contains(env.head_commit_message, '#skip-lint') }}
-        uses: golangci/golangci-lint-action@v6.0.1
+        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
           args: -v --timeout=5m
-          version: v1.60.3
+          version: v2.8.0
+          only-new-issues: false
 
       - name: Test
         if: ${{ github.event_name == 'pull_request' && !contains(env.head_commit_message, '#skip-test') }}

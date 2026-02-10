@@ -112,7 +112,10 @@ func (l *Logger) doLog(lvl slog.Level, msg string, args ...any) {
 	var pcs [1]uintptr
 	runtime.Callers(3, pcs[:])
 	if len(args) > 0 {
-		r := slog.NewRecord(time.Now(), lvl, fmt.Sprintf(msg, args...), pcs[0])
+		// Workaround to ignore go vet, see https://github.com/golang/go/issues/60529
+		var format = fmt.Sprintf
+		formatted := format(msg, args...)
+		r := slog.NewRecord(time.Now(), lvl, formatted, pcs[0])
 		_ = l.Log.Handler().Handle(ctx, r) //nolint:contextcheck
 	} else {
 		r := slog.NewRecord(time.Now(), lvl, msg, pcs[0])

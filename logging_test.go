@@ -4,49 +4,56 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 	"io"
 	"log/slog"
 	"os"
+	"os/signal"
 	"testing"
-	"time"
 
 	"github.com/castai/logging"
-	"github.com/stretchr/testify/require"
-	"golang.org/x/time/rate"
+	"github.com/castai/logging/components"
 )
 
-func TestExampleLogger(t *testing.T) {
-	text := logging.NewTextHandler(logging.TextHandlerConfig{
-		Level:     logging.MustParseLevel("INFO"),
-		Output:    os.Stdout,
-		AddSource: false,
+func ExampleLogger() {
+	ingestClient, err := components.NewAPIClient(components.Config{
+		APIBaseURL: "https://api.cast.ai",
+		APIKey:     "<api-key>",
+		ClusterID:  "<cluster-id>",
+		Component:  "castware",
+		Version:    "<version>",
 	})
-	rt := logging.NewRateLimitHandler(logging.RateLimiterHandlerConfig{
-		Limit: rate.Limit(100 * time.Millisecond),
-		Burst: 100,
-	})
-	export := logging.NewExportHandler(logging.ExportHandlerConfig{
-		MinLevel:   logging.MustParseLevel("WARN"),
-		BufferSize: 1000,
-	})
-	log := logging.New(text, export, rt)
+	if err != nil {
+		// Handle err ...
+		return
+	}
 
-	// Print dropped logs due rate limit.
-	go logging.PrintDroppedLogs(context.Background(), 5*time.Second, rt, func(level slog.Level, count uint64) {
-		fmt.Println("dropped lines", level, count)
+	var errg errgroup.Group
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	ingestClientBatchClient := components.NewBatchClient(ingestClient)
+	errg.Go(func() error {
+		return ingestClientBatchClient.Run(ctx)
 	})
 
-	// Export logs to your destination.
-	go func() {
-		select {
-		case log := <-export.Records():
-			fmt.Println(log)
-		}
-	}()
+	errg.Go(func() error {
+		text := logging.NewTextHandler(logging.DefaultTextHandlerConfig)
+		export := logging.NewExportHandler(ingestClientBatchClient, logging.DefaultExportHandlerConfig)
+		log := logging.New(text, export)
 
-	log.Infof("debug message with format value %s", "hello")
-	log.WithField("component", "agent").Errorf("something failed: %v", "unknown")
+		// Log logs
+		log.Infof("debug message with format value %s", "hello")
+		log.WithField("component", "agent").Errorf("something failed: %v", "unknown")
+
+		return nil
+	})
+
+	if err := errg.Wait(); err != nil {
+		// Hanlde err.
+	}
 }
 
 func TestLogger(t *testing.T) {

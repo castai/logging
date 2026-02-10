@@ -9,6 +9,13 @@ import (
 	"golang.org/x/time/rate"
 )
 
+var DefaultRateLimitHandlerConfig = RateLimiterHandlerConfig{
+	Limit: 100,
+	Burst: 100,
+}
+
+var _ Handler = new(RateLimitHandler)
+
 type RateLimiterHandlerConfig struct {
 	Limit rate.Limit
 	Burst int
