@@ -12,7 +12,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"sync"
 	"time"
 )
 
@@ -41,12 +40,6 @@ type Entry struct {
 const (
 	headerAPIKey = "X-API-Key" // #nosec G101
 )
-
-var gzipWriterPool = sync.Pool{
-	New: func() interface{} {
-		return gzip.NewWriter(nil)
-	},
-}
 
 type APIClient interface {
 	IngestLogs(ctx context.Context, entries []Entry) error
@@ -175,11 +168,9 @@ func (e *httpError) Error() string {
 
 func (a *APIClientImpl) doIngestRequest(ctx context.Context, jsonBytes []byte) error {
 	var compressedBuf bytes.Buffer
-	gzipWriter := gzipWriterPool.Get().(*gzip.Writer)
-	defer gzipWriterPool.Put(gzipWriter)
-
-	gzipWriter.Reset(&compressedBuf)
+	gzipWriter := gzip.NewWriter(&compressedBuf)
 	if _, err := gzipWriter.Write(jsonBytes); err != nil {
+		_ = gzipWriter.Close()
 		return err
 	}
 	if err := gzipWriter.Close(); err != nil {
