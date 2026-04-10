@@ -27,10 +27,10 @@ jobs:
 
       - name: Run golangci-lint
         if: ${{ github.event_name == 'pull_request' && !contains(env.head_commit_message, '#skip-lint') }}
-        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
+        uses: golangci/golangci-lint-action@46c9287ccb5fd9a896cb5705a7012084e34f6736 # v9.2.0
         with:
           args: -v --timeout=5m
-          version: v2.8.0
+          version: v2.11.4
           only-new-issues: false
 
       - name: Test
