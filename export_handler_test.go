@@ -28,8 +28,10 @@ func TestExportHandler(t *testing.T) {
 	log.Debug("msg5 should not send")
 	logWith := log.With(slog.String("k3", "v3"))
 	logWith.Info("msg6")
+	logWithNested := logWith.With(slog.String("k4", "v4"))
+	logWithNested.Info("msg7")
 
-	r.Len(client.logs, 5)
+	r.Len(client.logs, 6)
 	log1 := client.logs[0]
 	r.Equal("msg1", log1.Message)
 	r.Equal("LOG_LEVEL_INFO", log1.Level)
@@ -59,6 +61,12 @@ func TestExportHandler(t *testing.T) {
 	r.Equal("LOG_LEVEL_INFO", log5.Level)
 	r.Equal(map[string]string{"k3": "v3"}, log5.Fields)
 	r.NotEmpty(log5.Time)
+
+	log6 := client.logs[5]
+	r.Equal("msg7", log6.Message)
+	r.Equal("LOG_LEVEL_INFO", log6.Level)
+	r.Equal(map[string]string{"k3": "v3", "k4": "v4"}, log6.Fields)
+	r.NotEmpty(log6.Time)
 }
 
 type apiClient struct {
