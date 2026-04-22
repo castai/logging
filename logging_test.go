@@ -29,10 +29,10 @@ func ExampleLogger() {
 		return
 	}
 
-	var errg errgroup.Group
-
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
+
+	errg, ctx := errgroup.WithContext(ctx)
 
 	ingestClientBatchClient := components.NewBatchClient(ingestClient)
 	errg.Go(func() error {
@@ -107,6 +107,7 @@ func TestLogger(t *testing.T) {
 		log.Info("msg")
 		log.WithField("k", "v").Debug("msg2")
 		log.WithGroup("group").Debug("msg3")
+		log.With(slog.String("k1", "v1")).Error("msg4")
 		r.Contains(buf.String(), `level=info msg="msg custom 3 custom 2 custom 1"`)
 	})
 }
