@@ -3,6 +3,7 @@ package logging_test
 import (
 	"context"
 	"github.com/stretchr/testify/require"
+	"log/slog"
 	"testing"
 
 	"github.com/castai/logging"
@@ -13,8 +14,11 @@ func TestExportHandler(t *testing.T) {
 	r := require.New(t)
 
 	client := &apiClient{}
+	text := logging.NewTextHandler(logging.TextHandlerConfig{
+		Level: slog.LevelDebug,
+	})
 	exportHandler := logging.NewExportHandler(client, logging.DefaultExportHandlerConfig)
-	log := logging.New(exportHandler)
+	log := logging.New(text, exportHandler)
 
 	log.Info("msg1")
 	log.Warn("msg2")
@@ -22,8 +26,12 @@ func TestExportHandler(t *testing.T) {
 	groupLogger := log.WithGroup("g")
 	groupLogger.WithField("k2", "v2").Error("msg4")
 	log.Debug("msg5 should not send")
+	logWith := log.With(slog.String("k3", "v3"))
+	logWith.Info("msg6")
+	logWithNested := logWith.With(slog.String("k4", "v4"))
+	logWithNested.Info("msg7")
 
-	r.Len(client.logs, 4)
+	r.Len(client.logs, 6)
 	log1 := client.logs[0]
 	r.Equal("msg1", log1.Message)
 	r.Equal("LOG_LEVEL_INFO", log1.Level)
@@ -47,6 +55,18 @@ func TestExportHandler(t *testing.T) {
 	r.Equal("LOG_LEVEL_ERROR", log4.Level)
 	r.Equal(map[string]string{"g.k2": "v2"}, log4.Fields)
 	r.NotEmpty(log4.Time)
+
+	log5 := client.logs[4]
+	r.Equal("msg6", log5.Message)
+	r.Equal("LOG_LEVEL_INFO", log5.Level)
+	r.Equal(map[string]string{"k3": "v3"}, log5.Fields)
+	r.NotEmpty(log5.Time)
+
+	log6 := client.logs[5]
+	r.Equal("msg7", log6.Message)
+	r.Equal("LOG_LEVEL_INFO", log6.Level)
+	r.Equal(map[string]string{"k3": "v3", "k4": "v4"}, log6.Fields)
+	r.NotEmpty(log6.Time)
 }
 
 type apiClient struct {
