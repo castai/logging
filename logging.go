@@ -52,22 +52,33 @@ func MustParseLevel(lvlStr string) slog.Level {
 // New returns a new Logger.
 // Default output format is Text, unless you have either passed NewJSONHandler() or set `JSON_LOG = true` env variable.
 func New(handlers ...Handler) *Logger {
+	isJSONSet := envJSONLog()
+
 	if len(handlers) == 0 {
-		handlers = []Handler{defaultBaseHandler(envJSONLog())}
+		handlers = []Handler{defaultBaseHandler(isJSONSet)}
 	}
 
 	if tz := envTimeZone(); tz != nil {
 		handlers = append(handlers, NewTimeZoneHandler(envTimeZone()))
 	}
 
-	// Chain handlers. Execution is in reverse order.
-	var slogHandler slog.Handler
-	for _, handler := range handlers {
-		slogHandler = handler.Register(slogHandler)
+	slogHandler := chain(handlers)
+	if slogHandler == nil {
+		handlers = append([]Handler{defaultBaseHandler(isJSONSet)}, handlers...)
+		slogHandler = chain(handlers)
 	}
 
 	log := slog.New(slogHandler)
 	return &Logger{Log: log}
+}
+
+func chain(handlers []Handler) slog.Handler {
+	var h slog.Handler
+	for _, handler := range handlers {
+		h = handler.Register(h)
+	}
+
+	return h
 }
 
 // Logger is a small wrapper around slog with some extra methods
