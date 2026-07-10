@@ -21,6 +21,25 @@ type Handler interface {
 	Register(next slog.Handler) slog.Handler
 }
 
+// defaultBaseHandler returns the base format handler used when the caller
+// passes no handlers to New. JSON_LOG=true selects JSON; anything else keeps
+// the text handler.
+func defaultBaseHandler(useJSON bool) Handler {
+	if useJSON {
+		return NewJSONHandler(JSONHandlerConfig{
+			Level:     slog.LevelInfo,
+			Output:    os.Stdout,
+			AddSource: false,
+		})
+	}
+
+	return NewTextHandler(TextHandlerConfig{
+		Level:     slog.LevelInfo,
+		Output:    os.Stdout,
+		AddSource: false,
+	})
+}
+
 func MustParseLevel(lvlStr string) slog.Level {
 	var lvl slog.Level
 	err := lvl.UnmarshalText([]byte(lvlStr))
@@ -30,15 +49,15 @@ func MustParseLevel(lvlStr string) slog.Level {
 	return lvl
 }
 
+// New returns a new Logger.
+// Default output format is Text, unless you have either passed NewJSONHandler() or set `JSON_LOG = true` env variable.
 func New(handlers ...Handler) *Logger {
 	if len(handlers) == 0 {
-		handlers = []Handler{
-			NewTextHandler(TextHandlerConfig{
-				Level:     slog.LevelInfo,
-				Output:    os.Stdout,
-				AddSource: false,
-			}),
-		}
+		handlers = []Handler{defaultBaseHandler(envJSONLog())}
+	}
+
+	if tz := envTimeZone(); tz != nil {
+		handlers = append(handlers, NewTimeZoneHandler(envTimeZone()))
 	}
 
 	// Chain handlers. Execution is in reverse order.
