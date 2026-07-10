@@ -59,11 +59,12 @@ func New(handlers ...Handler) *Logger {
 	}
 
 	if tz := envTimeZone(); tz != nil {
-		handlers = append(handlers, NewTimeZoneHandler(envTimeZone()))
+		handlers = append(handlers, NewTimeZoneHandler(tz))
 	}
 
 	slogHandler := chain(handlers)
 	if slogHandler == nil {
+		// Auto-insert base when only decorator handlers were given
 		handlers = append([]Handler{defaultBaseHandler(isJSONSet)}, handlers...)
 		slogHandler = chain(handlers)
 	}
