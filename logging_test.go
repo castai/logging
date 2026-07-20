@@ -3,6 +3,7 @@ package logging_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"testing"
+	"time"
 
 	"github.com/castai/logging"
 	"github.com/castai/logging/components"
@@ -109,6 +111,124 @@ func TestLogger(t *testing.T) {
 		log.WithGroup("group").Debug("msg3")
 		log.With(slog.String("k1", "v1")).Error("msg4")
 		r.Contains(buf.String(), `level=info msg="msg custom 3 custom 2 custom 1"`)
+	})
+
+	t.Run("print logs with JSON handler", func(t *testing.T) {
+		r := require.New(t)
+		var buf bytes.Buffer
+		log := logging.New(logging.NewJSONHandler(logging.JSONHandlerConfig{
+			Level:  logging.MustParseLevel("info"),
+			Output: io.MultiWriter(&buf, os.Stdout),
+		}))
+
+		log.WithField("component", "server").Info("hello")
+
+		var m map[string]any
+		r.NoError(json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &m))
+		r.Equal("INFO", m["level"])
+		r.Equal("hello", m["msg"])
+		r.Equal("server", m["component"])
+	})
+
+	t.Run("timezone handler converts record time to UTC", func(t *testing.T) {
+		r := require.New(t)
+		var buf bytes.Buffer
+		log := logging.New(
+			logging.NewJSONHandler(logging.JSONHandlerConfig{
+				Level:  logging.MustParseLevel("info"),
+				Output: &buf,
+			}),
+			logging.NewTimeZoneHandler(time.UTC),
+		)
+
+		log.Info("msg")
+
+		var m map[string]any
+		r.NoError(json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &m))
+		ts, _ := m["time"].(string)
+		parsed, err := time.Parse(time.RFC3339Nano, ts)
+		r.NoError(err)
+		_, offset := parsed.Zone()
+		r.Equal(0, offset)
+	})
+
+	t.Run("LOG_TIMEZONE env applies to explicit JSON handler", func(t *testing.T) {
+		r := require.New(t)
+		t.Setenv("JSON_LOG", "")
+		t.Setenv("LOG_TIMEZONE", "Europe/Vilnius")
+
+		var buf bytes.Buffer
+		log := logging.New(logging.NewJSONHandler(logging.JSONHandlerConfig{
+			Level:  logging.MustParseLevel("info"),
+			Output: &buf,
+		}))
+
+		log.Info("hello")
+
+		var m map[string]any
+		r.NoError(json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &m))
+		ts, _ := m["time"].(string)
+		parsed, err := time.Parse(time.RFC3339Nano, ts)
+		r.NoError(err)
+
+		loc, err := time.LoadLocation("Europe/Vilnius")
+		r.NoError(err)
+		_, want := time.Now().In(loc).Zone()
+		_, got := parsed.Zone()
+		r.Equal(want, got)
+	})
+
+	t.Run("JSON_LOG env does not override explicit text handler", func(t *testing.T) {
+		r := require.New(t)
+		t.Setenv("JSON_LOG", "true")
+		t.Setenv("LOG_TIMEZONE", "")
+
+		var buf bytes.Buffer
+		log := logging.New(logging.NewTextHandler(logging.TextHandlerConfig{
+			Level:  logging.MustParseLevel("info"),
+			Output: &buf,
+		}))
+
+		log.Info("hello")
+
+		out := buf.String()
+		r.Contains(out, "level=info")
+		r.Contains(out, "msg=hello")
+		r.NotContains(out, `"msg":"hello"`)
+	})
+
+	t.Run("invalid JSON_LOG env panics", func(t *testing.T) {
+		t.Setenv("JSON_LOG", "notabool")
+		t.Setenv("LOG_TIMEZONE", "")
+		require.Panics(t, func() {
+			logging.New(logging.NewTextHandler(logging.TextHandlerConfig{
+				Level:  logging.MustParseLevel("info"),
+				Output: &bytes.Buffer{},
+			}))
+		})
+	})
+
+	t.Run("decorator-only handler chain gets default base handler", func(t *testing.T) {
+		r := require.New(t)
+		t.Setenv("JSON_LOG", "true")
+		t.Setenv("LOG_TIMEZONE", "")
+
+		// Only a decorator handler is passed. New must auto-insert the
+		// default base handler (JSON, because JSON_LOG=true) so the chain
+		// has something to terminate at.
+		log := logging.New(logging.NewTimeZoneHandler(time.UTC))
+		r.NotPanics(func() { log.Info("hi") })
+	})
+
+	t.Run("invalid LOG_TIMEZONE env panics", func(t *testing.T) {
+		t.Setenv("JSON_LOG", "")
+		t.Setenv("LOG_TIMEZONE", "Not/AZone")
+		require.Panics(t, func() {
+			logging.New(logging.NewTextHandler(logging.TextHandlerConfig{
+				Level:  logging.MustParseLevel("info"),
+				Output: &bytes.Buffer{},
+			}))
+		})
 	})
 }
 
