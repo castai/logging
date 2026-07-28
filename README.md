@@ -13,6 +13,8 @@ This package is almost a drop in replacement for logrus. It's based on slog logg
 * Interfaces for consumer packages: `FieldsLogger`, `FieldLogger`, `BaseLogger` — `*Logger` satisfies them all.
 * Context-aware helpers: `WithLogger`, `FromContext`, `FromContextWithField`, `FromContextWithFields`.
 * Test hook: `NewNullLogger()` returns a logger that captures records for assertions in tests.
+* Pluggable trace/span attach: register a `TraceSpanExtractor` to automatically enrich `FromContext` loggers with `trace_id`/`span_id` fields.
+* `Commit()` helper: read the first 8 chars of the binary's git revision via `debug.ReadBuildInfo` and attach as a log field.
 
 ## Install
 
@@ -71,3 +73,28 @@ entries := hook.AllEntries()
 ```
 
 `TestHook.Reset()`, `TestHook.LastEntry()`, `TestHook.AllEntries()` are the primary read APIs. All levels are captured regardless of runtime level filters, so tests can assert on debug records emitted under an info-level configuration.
+
+## Trace / span attachment
+
+`castai/logging` does not depend on any tracing library. Instead, register a `TraceSpanExtractor` from your tracing package at process init:
+
+```go
+type myExtractor struct{}
+
+func (myExtractor) TraceID(ctx context.Context) string { /* pull from ctx */ return "" }
+func (myExtractor) SpanID(ctx context.Context)  string { /* pull from ctx */ return "" }
+
+func init() {
+    logging.SetTraceSpanExtractor(myExtractor{})
+}
+```
+
+When a `FromContext(ctx)` (or `FromContextWithField[s]`) call is made and the registered extractor returns non-empty IDs for `ctx`, the returned logger gets `trace_id`/`span_id` fields attached transparently. Passing `nil` to `SetTraceSpanExtractor` disables the feature.
+
+## Commit hash
+
+```go
+log := logging.New().With(slog.String("commit", logging.Commit()))
+```
+
+`Commit()` returns the first 8 chars of `vcs.revision` from `debug.ReadBuildInfo`, or the empty string when build info is unavailable (e.g. under `go test`).
