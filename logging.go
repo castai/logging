@@ -154,14 +154,43 @@ func (l *Logger) doLog(lvl slog.Level, msg string, args ...any) {
 	}
 }
 
-func (l *Logger) With(args ...any) *Logger {
+// With returns a derived logger with the given slog-style args attached.
+// The return type is the FieldsLogger interface so that callers may swap in
+// fakes for testing; the concrete value is always a *Logger and may be
+// type-asserted when direct access to the underlying *slog.Logger is needed.
+func (l *Logger) With(args ...any) FieldsLogger {
 	return &Logger{Log: l.Log.With(args...)}
 }
 
-func (l *Logger) WithField(k, v string) *Logger {
+// WithField returns a derived logger with a single string-valued field.
+// The return type is the FieldsLogger interface (see With for rationale).
+// For non-string values use WithFieldAny.
+func (l *Logger) WithField(k, v string) FieldsLogger {
 	return &Logger{Log: l.Log.With(slog.String(k, v))}
 }
 
-func (l *Logger) WithGroup(name string) *Logger {
+// WithFieldAny returns a derived logger with a single field whose value may
+// be of any type. Values are handled by slog's default attribute resolution.
+func (l *Logger) WithFieldAny(k string, v any) FieldsLogger {
+	return &Logger{Log: l.Log.With(slog.Any(k, v))}
+}
+
+// WithFields returns a derived logger with all entries of the given map
+// attached as attributes. Convenient for migrating from logrus-style call
+// sites: log.WithFields(logging.Fields{"a": 1, "b": "c"}).Info(...).
+func (l *Logger) WithFields(fields map[string]any) FieldsLogger {
+	if len(fields) == 0 {
+		return l
+	}
+	attrs := make([]any, 0, len(fields))
+	for k, v := range fields {
+		attrs = append(attrs, slog.Any(k, v))
+	}
+	return &Logger{Log: l.Log.With(attrs...)}
+}
+
+// WithGroup returns a derived logger whose subsequent attributes are grouped
+// under the given name.
+func (l *Logger) WithGroup(name string) FieldsLogger {
 	return &Logger{Log: l.Log.WithGroup(name)}
 }

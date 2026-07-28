@@ -1,13 +1,18 @@
 # Slog based logging for Go
 
-This package is almost a drop in replacement for logrus. It's based on slog logger which is now part of Go standard
-library.
+This package is almost a drop in replacement for logrus. It's based on slog logger which is now part of Go standard library.
 
 ## Features
 
 * Rate limit
 * Export hook for logs export to external systems
 * Logfmt text format handler with source lines support.
+* JSON format handler (see `NewJSONHandler`).
+* Timezone rewriting handler (see `NewTimeZoneHandler`; also driven by `LOG_TIMEZONE` env var).
+* Env-driven output format via `JSON_LOG=true`.
+* Interfaces for consumer packages: `FieldsLogger`, `FieldLogger`, `BaseLogger` — `*Logger` satisfies them all.
+* Context-aware helpers: `WithLogger`, `FromContext`, `FromContextWithField`, `FromContextWithFields`.
+* Test hook: `NewNullLogger()` returns a logger that captures records for assertions in tests.
 
 ## Install
 
@@ -17,36 +22,52 @@ go get github.com/castai/logging
 
 ## Example
 
-See `examples` directory for examples.
+See `logging_test.go` for the canonical example.
 
-### Env vars honored by `New`
-
-`New` reads two environment variables:
-
-| Env var        | Values                                                         | Effect                                                                     |
-|----------------|----------------------------------------------------------------|----------------------------------------------------------------------------|
-| `JSON_LOG`     | anything `strconv.ParseBool` accepts, e.g. `true, false, 1, 0` | Selects the **default** base handler when no handlers are passed to `New`. |
-| `LOG_TIMEZONE` | IANA name, e.g. `Europe/Vilnius`, `America/Lima`               | Appends a timezone handler that converts record timestamps.                |
-
-`JSON_LOG` never overrides an explicit handler you pass to `New` — it only
-picks the default when you pass none. `LOG_TIMEZONE` always applies, so you
-can mix an explicit format with an env-driven timezone:
+## Interfaces
 
 ```go
-// Env-only: JSON_LOG / LOG_TIMEZONE fully drive the setup.
-log := logging.New()
+type FieldsLogger interface {
+    BaseLogger
+    With(args ...any) FieldsLogger
+    WithField(key, value string) FieldsLogger
+    WithFieldAny(key string, value any) FieldsLogger
+    WithFields(fields map[string]any) FieldsLogger
+    WithGroup(name string) FieldsLogger
+}
 
-// Mixed: explicit JSON format, timezone from env.
-log := logging.New(logging.NewJSONHandler(logging.DefaultJSONHandlerConfig))
-
-// Fully explicit: env vars for format are ignored; LOG_TIMEZONE would still apply.
-log := logging.New(
-logging.NewTextHandler(logging.DefaultTextHandlerConfig),
-logging.NewTimeZoneHandler(time.UTC),
-)
+// Fields is a convenience alias for map[string]any, matching logrus's Fields.
+type Fields = map[string]any
 ```
 
-Invalid values (`JSON_LOG=notabool`, unknown `LOG_TIMEZONE`) cause `New` to
-panic — same convention as `MustParseLevel`. Loading a zone requires tzdata
-to be present in the runtime image; on scratch/distroless containers add a
-blank import of `time/tzdata`.
+`*Logger` satisfies `FieldsLogger` (and `FieldLogger`, an alias). Consumer packages should depend on `FieldsLogger` in function parameters and struct fields; production code passes a `*Logger`, tests pass a `NewNullLogger()`-produced logger.
+
+## Context helpers
+
+```go
+ctx = logging.WithLogger(ctx, log)
+
+// Later, anywhere down the call stack:
+logging.FromContext(ctx).Info("hello")
+
+// Derive a logger with a new field and store it in a fresh ctx:
+ctx, log := logging.FromContextWithField(ctx, "node_name", "node-a")
+log.Warn("draining")
+```
+
+If no logger is stored in ctx, `FromContext` returns a lazily-constructed package default (identical to `New()`).
+
+## Test hook
+
+```go
+log, hook := logging.NewNullLogger()
+
+log.WithField("k", "v").Error("boom")
+
+entries := hook.AllEntries()
+// entries[0].Level == slog.LevelError
+// entries[0].Message == "boom"
+// entries[0].Attrs["k"] == "v"
+```
+
+`TestHook.Reset()`, `TestHook.LastEntry()`, `TestHook.AllEntries()` are the primary read APIs. All levels are captured regardless of runtime level filters, so tests can assert on debug records emitted under an info-level configuration.
