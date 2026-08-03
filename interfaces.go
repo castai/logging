@@ -3,14 +3,10 @@ package logging
 import "log/slog"
 
 // Fields is a convenience alias for a bag of structured log fields.
-// It matches the shape used by callers migrating from logrus and from
-// github.com/castai/kubecast/lib/logging.
+// Used for Logrus compatibility.
 type Fields = map[string]any
 
-// BaseLogger is the minimum surface needed by callers that only emit logs
-// without further derivation. All methods mirror the corresponding *Logger
-// methods.
-type BaseLogger interface {
+type FieldsLogger interface {
 	Debug(msg string)
 	Debugf(format string, args ...any)
 	Info(msg string)
@@ -22,28 +18,12 @@ type BaseLogger interface {
 	Fatal(msg string)
 	Fatalf(format string, args ...any)
 	IsEnabled(lvl slog.Level) bool
+
+	With(args ...any) *Logger
+	WithField(key, value string) *Logger
+	WithFieldAny(key string, value any) *Logger
+	WithFields(fields map[string]any) *Logger
+	WithGroup(name string) *Logger
 }
 
-// FieldsLogger is the interface most consumer packages should depend on.
-// It extends BaseLogger with derivation methods that return the same
-// interface, so tests can substitute a fake implementation.
-type FieldsLogger interface {
-	BaseLogger
-	With(args ...any) FieldsLogger
-	WithField(key, value string) FieldsLogger
-	WithFieldAny(key string, value any) FieldsLogger
-	WithFields(fields map[string]any) FieldsLogger
-	WithGroup(name string) FieldsLogger
-}
-
-// FieldLogger is a compatibility alias for callers migrating from
-// github.com/castai/kubecast/lib/logging, which distinguished FieldLogger
-// (logrus-style) from FieldsLogger. Under this package they are the same.
-type FieldLogger = FieldsLogger
-
-// Compile-time assertion that *Logger satisfies the interfaces.
-var (
-	_ BaseLogger   = (*Logger)(nil)
-	_ FieldsLogger = (*Logger)(nil)
-	_ FieldLogger  = (*Logger)(nil)
-)
+var _ FieldsLogger = (*Logger)(nil)

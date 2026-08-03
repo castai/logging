@@ -2,7 +2,6 @@ package logging
 
 import (
 	"context"
-	"log/slog"
 	"sync"
 )
 
@@ -13,10 +12,6 @@ var (
 	defaultLogger     *Logger
 )
 
-// defaultCtxLogger lazily constructs a package-level logger used as a fallback
-// when FromContext is called with a context that has no logger attached.
-// The instance mirrors what New() would return with no arguments (env-driven
-// text/JSON handler, optional timezone handler).
 func defaultCtxLogger() *Logger {
 	defaultLoggerOnce.Do(func() {
 		defaultLogger = New()
@@ -27,25 +22,26 @@ func defaultCtxLogger() *Logger {
 // WithLogger stores logger in a derived context. The stored logger is
 // retrievable with FromContext.
 func WithLogger(ctx context.Context, logger *Logger) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return context.WithValue(ctx, loggerCtxKey{}, logger)
 }
 
 // FromContext returns the logger previously stored with WithLogger, or a
 // package-level default if none is present. If a TraceSpanExtractor is
 // registered and returns non-empty IDs for ctx, trace_id and span_id fields
-// are attached to the returned logger; the returned logger is a fresh
-// derivation and does not mutate the value stored in ctx.
+// are attached to the returned logger.
 func FromContext(ctx context.Context) *Logger {
 	base := loggerFromCtx(ctx)
 	return maybeAttachTrace(ctx, base)
 }
 
 // FromContextWithField retrieves the logger from ctx, derives a new logger
-// with the additional field, stores it in a derived context, and returns
-// both. Convenient for `ctx, log := logging.FromContextWithField(ctx, k, v)`.
+// with the additional field, stores it in a derived context, and returns both.
 func FromContextWithField(ctx context.Context, key string, value any) (context.Context, *Logger) {
 	base := loggerFromCtx(ctx)
-	derived := &Logger{Log: base.Log.With(slog.Any(key, value))}
+	derived := base.WithFieldAny(key, value)
 	derived = maybeAttachTrace(ctx, derived)
 	return WithLogger(ctx, derived), derived
 }
@@ -53,15 +49,7 @@ func FromContextWithField(ctx context.Context, key string, value any) (context.C
 // FromContextWithFields is the multi-field variant of FromContextWithField.
 func FromContextWithFields(ctx context.Context, fields map[string]any) (context.Context, *Logger) {
 	base := loggerFromCtx(ctx)
-	if len(fields) == 0 {
-		derived := maybeAttachTrace(ctx, base)
-		return WithLogger(ctx, derived), derived
-	}
-	attrs := make([]any, 0, len(fields))
-	for k, v := range fields {
-		attrs = append(attrs, slog.Any(k, v))
-	}
-	derived := &Logger{Log: base.Log.With(attrs...)}
+	derived := base.WithFields(fields)
 	derived = maybeAttachTrace(ctx, derived)
 	return WithLogger(ctx, derived), derived
 }
@@ -82,8 +70,6 @@ func loggerFromCtx(ctx context.Context) *Logger {
 // when a TraceSpanExtractor is registered and yields non-empty IDs for ctx.
 // It returns the input logger unchanged otherwise (no allocation).
 func maybeAttachTrace(ctx context.Context, l *Logger) *Logger {
-	// Delegates to the trace_extractor.go helper. When no extractor is
-	// registered, the helper returns l unchanged.
 	return attachTraceFields(ctx, l)
 }
 
