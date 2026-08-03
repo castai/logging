@@ -74,8 +74,6 @@ func maybeAttachTrace(ctx context.Context, l *Logger) *Logger {
 }
 
 // Package-level convenience helpers that combine FromContext + a log call.
-// They mirror the shape of lib/logging's ctx-based helpers so callers can
-// migrate without changing their call sites.
 
 // Debugf logs at debug level using the logger stored in ctx.
 func Debugf(ctx context.Context, format string, args ...any) {

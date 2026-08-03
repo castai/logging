@@ -22,7 +22,8 @@ func main() {
 		// You can also set your preferred timezone via `LOG_TIMEZONE = Europe/Vilnius` env variable.
 		logging.NewTimeZoneHandler(time.UTC),
 
-		// Attach commit to every message
+		// Attaches "commit" to every record, resolved once here rather than
+		// per log call.
 		logging.NewCommitHandler(),
 	)
 

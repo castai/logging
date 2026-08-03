@@ -23,8 +23,7 @@ type extractorHolder struct {
 var traceExtractor atomic.Pointer[extractorHolder]
 
 // SetTraceSpanExtractor registers the process-wide extractor. Pass nil to
-// disable trace/span attachment. Safe to call at any time; already-derived
-// loggers will pick up the new extractor on their next FromContext call.
+// disable trace/span attachment.
 func SetTraceSpanExtractor(e TraceSpanExtractor) {
 	if e == nil {
 		traceExtractor.Store(nil)

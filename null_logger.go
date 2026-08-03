@@ -11,9 +11,6 @@ import (
 
 // TestEntry captures a single log record for assertions in tests.
 // It intentionally mirrors the shape of github.com/sirupsen/logrus/hooks/test
-// Entry (Level, Message, Data, Time) so migrations from that hook are
-// mechanical: rename Data -> Attrs and Level's type from logrus.Level to
-// slog.Level.
 type TestEntry struct {
 	Level   slog.Level
 	Message string
@@ -31,32 +28,23 @@ type TestHook struct {
 	parent     *TestHook   // non-nil on hooks derived via WithAttrs/WithGroup
 }
 
-// NewNullLogger returns a *Logger whose only handler is a TestHook. All
-// emitted records are captured by the returned hook.
 func NewNullLogger() (*Logger, *TestHook) {
 	hook := &TestHook{}
 	log := New(hook)
 	return log, hook
 }
 
-// Register makes TestHook satisfy the Handler interface for use with New.
-// The hook does not forward to a next handler; it acts as a terminal sink.
 func (h *TestHook) Register(_ slog.Handler) slog.Handler {
 	return h
 }
 
-// Enabled reports whether the given level is captured. All levels are
-// captured by default so tests can assert on debug-level records emitted
-// under an info-level runtime configuration.
 func (h *TestHook) Enabled(_ context.Context, _ slog.Level) bool {
 	return true
 }
 
-// Handle records the given slog.Record into the hook's entries slice.
 func (h *TestHook) Handle(_ context.Context, r slog.Record) error {
 	attrs := make(map[string]any, r.NumAttrs()+len(h.baseAttrs))
 
-	// Include attributes accumulated via WithAttrs, respecting groups.
 	for _, a := range h.baseAttrs {
 		flattenAttr(attrs, h.baseGroups, a)
 	}
@@ -79,8 +67,6 @@ func (h *TestHook) Handle(_ context.Context, r slog.Record) error {
 	return nil
 }
 
-// WithAttrs returns a shallow copy of the hook with the additional attributes
-// remembered for subsequent Handle calls.
 func (h *TestHook) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return &TestHook{
 		baseAttrs:  slices.Concat(h.baseAttrs, attrs),
@@ -89,8 +75,6 @@ func (h *TestHook) WithAttrs(attrs []slog.Attr) slog.Handler {
 	}
 }
 
-// WithGroup returns a shallow copy of the hook with the additional group
-// name appended. The derived hook shares the parent's entries slice.
 func (h *TestHook) WithGroup(name string) slog.Handler {
 	return &TestHook{
 		baseAttrs:  slices.Clone(h.baseAttrs),
@@ -99,8 +83,6 @@ func (h *TestHook) WithGroup(name string) slog.Handler {
 	}
 }
 
-// AllEntries returns a copy of the captured entries in insertion order.
-// Safe to call concurrently with emitting records.
 func (h *TestHook) AllEntries() []TestEntry {
 	root := h.rootHook()
 	root.mu.Lock()
@@ -113,7 +95,6 @@ func (h *TestHook) AllEntries() []TestEntry {
 	return out
 }
 
-// LastEntry returns the most recently captured entry, or nil if none.
 func (h *TestHook) LastEntry() *TestEntry {
 	root := h.rootHook()
 	root.mu.Lock()
@@ -121,8 +102,6 @@ func (h *TestHook) LastEntry() *TestEntry {
 	if len(root.entries) == 0 {
 		return nil
 	}
-	// Return a deep copy so mutating the result (including its Attrs map)
-	// cannot alias or race with internal state.
 	e := root.entries[len(root.entries)-1]
 	e.Attrs = maps.Clone(e.Attrs)
 	return &e
@@ -145,8 +124,6 @@ func (h *TestHook) rootHook() *TestHook {
 	return root
 }
 
-// flattenAttr writes attr into m, honoring an active group path.
-// Groups are joined with '.' to match ExportHandler's convention.
 func flattenAttr(m map[string]any, groups []string, attr slog.Attr) {
 	key := attr.Key
 	if len(groups) > 0 {
@@ -158,7 +135,7 @@ func flattenAttr(m map[string]any, groups []string, attr slog.Attr) {
 	}
 
 	v := attr.Value
-	// Resolve LogValuer wrappers (e.g. errors that implement slog.LogValuer).
+	// Resolve LogValuer wrappers
 	v = v.Resolve()
 
 	switch v.Kind() {

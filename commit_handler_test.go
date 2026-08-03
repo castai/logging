@@ -75,6 +75,33 @@ func TestCommitHandler(t *testing.T) {
 		r.True(ok, "expected group 'g', got %T", m["g"])
 		r.Equal("v", g["k"])
 	})
+
+	t.Run("resolved once and shared across multiple New calls", func(t *testing.T) {
+		r := require.New(t)
+		// The commit is resolved when NewCommitHandler is called, not when
+		// the returned Handler is later registered — so a single Handler
+		// value reused across several loggers only pays for one Commit()
+		// lookup, and both loggers see the same value even if override
+		// resolution could otherwise be call-time dependent.
+		handler := logging.NewCommitHandler("cafebabe1234")
+
+		var buf1, buf2 bytes.Buffer
+		log1 := logging.New(logging.NewJSONHandler(logging.JSONHandlerConfig{
+			Level: slog.LevelInfo, Output: &buf1,
+		}), handler)
+		log2 := logging.New(logging.NewJSONHandler(logging.JSONHandlerConfig{
+			Level: slog.LevelInfo, Output: &buf2,
+		}), handler)
+
+		log1.Info("first")
+		log2.Info("second")
+
+		var m1, m2 map[string]any
+		r.NoError(json.Unmarshal(bytes.TrimSpace(buf1.Bytes()), &m1))
+		r.NoError(json.Unmarshal(bytes.TrimSpace(buf2.Bytes()), &m2))
+		r.Equal("cafebabe", m1["commit"])
+		r.Equal("cafebabe", m2["commit"])
+	})
 }
 
 func TestCommit(t *testing.T) {

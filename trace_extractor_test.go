@@ -11,9 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// stubExtractor implements TraceSpanExtractor with configurable return
-// values. Used to drive the attachTraceFields path from tests without
-// pulling in a real tracing backend.
 type stubExtractor struct {
 	traceID string
 	spanID  string
@@ -93,9 +90,6 @@ func TestSetTraceSpanExtractor_NoDuplicateOnRepeatedFromContext(t *testing.T) {
 	}))
 	ctx := WithLogger(context.Background(), base)
 
-	// Round-trip through FromContext/WithLogger repeatedly, as
-	// FromContextWithField/FromContextWithFields do internally. Each round
-	// trip must attach trace_id/span_id at most once, not once per call.
 	ctx, log1 := FromContextWithField(ctx, "step", "one")
 	log1.Info("first")
 	ctx, log2 := FromContextWithField(ctx, "step", "two")
@@ -115,8 +109,6 @@ func TestSetTraceSpanExtractor_NilCtx(t *testing.T) {
 	t.Cleanup(func() { SetTraceSpanExtractor(nil) })
 	SetTraceSpanExtractor(stubExtractor{traceID: "t", spanID: "s"})
 
-	// FromContext(nil) must not panic. It should fall back to the package
-	// default and skip trace attachment because ctx is nil.
 	r.NotPanics(func() { _ = FromContext(context.Background()) })
 	r.NotPanics(func() { _ = FromContext(nil) }) //nolint:staticcheck
 }
@@ -159,6 +151,5 @@ func TestSetTraceSpanExtractor_ConcurrentRegistration(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	// If we reach here without a race-detector abort, the test passes.
 	r.True(true)
 }

@@ -14,7 +14,7 @@ This package is almost a drop in replacement for logrus. It's based on slog logg
 * Context-aware helpers: `WithLogger`, `FromContext`, `FromContextWithField`, `FromContextWithFields`.
 * Test hook: `NewNullLogger()` returns a logger that captures records for assertions in tests.
 * Pluggable trace/span attach: register a `TraceSpanExtractor` to automatically enrich `FromContext` loggers with `trace_id`/`span_id` fields.
-* `NewCommitHandler()`: attaches the binary's git revision (first 8 chars, via `debug.ReadBuildInfo`) as a `commit` field on every record, resolved once when the handler chain is built; `Commit()` is also available standalone. Both take an optional override for when `vcs.revision` isn't available.
+* `NewCommitHandler()`: attaches the binary's git revision (first 8 chars, via `debug.ReadBuildInfo`) as a `commit` field on every record, resolved once when the handler is constructed; `Commit()` is also available standalone. Both take an optional override for when `vcs.revision` isn't available.
 * `Println(v ...any)`, logged at error level: lets `*Logger` be passed directly where a `promhttp.Logger`-shaped (or `*log.Logger`-shaped) single-method interface is expected, e.g. `promhttp.HandlerOpts{ErrorLog: log}`.
 
 ## Install
@@ -112,7 +112,7 @@ log := logging.New(
 )
 ```
 
-`NewCommitHandler()` attaches a `commit` field (first 8 chars of `vcs.revision` from `debug.ReadBuildInfo`) to every record. It resolves the commit once, when `New` builds the handler chain — not per record — and is a no-op when the commit is unavailable (e.g. under `go test` without `-buildvcs`). Like the other decorator handlers (`NewTimeZoneHandler`, `NewRateLimitHandler`), it must come after a base handler (`NewJSONHandler`/`NewTextHandler`) in the `New(...)` list, unless it's the only handler passed — `New` auto-inserts a default base handler in front when the chain would otherwise have no terminal handler.
+`NewCommitHandler()` attaches a `commit` field (first 8 chars of `vcs.revision` from `debug.ReadBuildInfo`) to every record. The commit is resolved once, immediately when `NewCommitHandler` is called — not per record, and not re-resolved even if the returned `Handler` is reused across multiple `New(...)` calls to build several loggers. It's a no-op when the commit is unavailable (e.g. under `go test` without `-buildvcs`). Like the other decorator handlers (`NewTimeZoneHandler`, `NewRateLimitHandler`), it must come after a base handler (`NewJSONHandler`/`NewTextHandler`) in the `New(...)` list, unless it's the only handler passed — `New` auto-inserts a default base handler in front when the chain would otherwise have no terminal handler.
 
 If `vcs.revision` isn't populated (shallow clones, builds without `-buildvcs`, Docker multi-stage builds without `.git` in the build context), pass a hash injected at build time instead — e.g. via `-ldflags "-X pkg.var=$(git rev-parse HEAD)"`:
 
@@ -120,4 +120,4 @@ If `vcs.revision` isn't populated (shallow clones, builds without `-buildvcs`, D
 logging.NewCommitHandler(gitCommitLdflagVar)
 ```
 
-`Commit(override ...string)` — the same lookup, without the handler wrapping — is also available standalone for callers that want the raw string (e.g. to attach via `.With(...)`, or for non-logging uses). Call it once and reuse the result; unlike `NewCommitHandler`, it is not memoized, so a repeated no-arg call re-scans build info.
+`Commit(override ...string)` — the same lookup, without the handler wrapping — is also available standalone for callers that want the raw string (e.g. to attach via `.With(...)`, or for non-logging uses). Call it once and reuse the result; it re-scans build info on every call.

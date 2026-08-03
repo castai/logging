@@ -18,6 +18,7 @@ func (h HandlerFunc) Register(next slog.Handler) slog.Handler {
 
 // Handler allows to chain multiple handlers.
 // Order of execution is reverse to order of registration meaning first handler is executed last.
+// Please make sure to check existing env variables like `JSON_LOG`.
 type Handler interface {
 	Register(next slog.Handler) slog.Handler
 }

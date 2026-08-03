@@ -30,10 +30,7 @@ var _ FieldsLogger = (*Logger)(nil)
 
 // printlnLogger is the minimal single-method shape used by several
 // third-party packages — most notably promhttp.Logger
-// (github.com/prometheus/client_golang/prometheus/promhttp) and the
-// standard library's *log.Logger. Declared locally so *Logger's
-// compatibility with it can be asserted without depending on either
-// package.
+// (github.com/prometheus/client_golang/prometheus/promhttp)
 type printlnLogger interface {
 	Println(v ...any)
 }

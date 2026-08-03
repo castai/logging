@@ -5,24 +5,11 @@ import (
 	"runtime/debug"
 )
 
-// commitLen bounds the returned commit prefix
 const commitLen = 8
 
-// NewCommitHandler returns a chain handler that attaches a "commit" field to every record.
-func NewCommitHandler(override ...string) Handler {
-	return HandlerFunc(func(next slog.Handler) slog.Handler {
-		if next == nil {
-			return next
-		}
-		commit := Commit(override...)
-		if commit == "" {
-			return next
-		}
-		return next.WithAttrs([]slog.Attr{slog.String("commit", commit)})
-	})
-}
-
 // Commit returns the first commitLen characters of a git revision.
+// With no argument, it reads vcs.revision from debug.ReadBuildInfo.
+// Returns an empty string when build info is unavailable.
 func Commit(override ...string) string {
 	if len(override) > 0 && override[0] != "" {
 		return truncateCommit(override[0])
@@ -45,4 +32,18 @@ func truncateCommit(hash string) string {
 		return hash[:commitLen]
 	}
 	return hash
+}
+
+// NewCommitHandler returns a chain handler that attaches a "commit" field to every log entry.
+func NewCommitHandler(override ...string) Handler {
+	commit := Commit(override...)
+	return HandlerFunc(func(next slog.Handler) slog.Handler {
+		if next == nil {
+			return next
+		}
+		if commit == "" {
+			return next
+		}
+		return next.WithAttrs([]slog.Attr{slog.String("commit", commit)})
+	})
 }

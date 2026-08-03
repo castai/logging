@@ -31,10 +31,6 @@ func TestLoggerPrintln(t *testing.T) {
 	r := require.New(t)
 	log, hook := NewNullLogger()
 
-	// Mirrors how promhttp.HandlerOpts.ErrorLog calls Println: a
-	// string label followed by a non-string value, expected to come out
-	// space-joined like fmt.Sprintln/log.Logger.Println, not fmt.Sprint's
-	// space-only-between-non-strings rule.
 	log.Println("error gathering metrics:", errors.New("boom"))
 
 	last := hook.LastEntry()
@@ -66,11 +62,9 @@ func TestNullLoggerCapturesAcrossDerivations(t *testing.T) {
 	r := require.New(t)
 	log, hook := NewNullLogger()
 
-	// Derived via WithField (WithAttrs on the underlying slog handler).
 	derived := log.WithField("component", "worker")
 	derived.Info("started")
 
-	// Derived via WithGroup.
 	grouped := log.WithGroup("nested")
 	grouped.WithField("k", "v").Info("in-group")
 
@@ -107,7 +101,6 @@ func TestNullLoggerLastEntryAttrsNotAliased(t *testing.T) {
 	last.Attrs["k"] = "mutated"
 	last.Attrs["injected"] = "boom"
 
-	// A fresh read must not observe the mutation made above.
 	again := hook.LastEntry()
 	r.Equal("v", again.Attrs["k"])
 	r.NotContains(again.Attrs, "injected")
@@ -125,8 +118,6 @@ func TestNullLoggerCapturesErrorValue(t *testing.T) {
 
 	last := hook.LastEntry()
 	r.NotNil(last)
-	// The slog Any attribute stores the error as-is; readers can type-assert
-	// or format it. We assert that the stored value equals the original.
 	got, ok := last.Attrs["error"].(error)
 	r.True(ok, "expected the captured attribute to be an error, got %T", last.Attrs["error"])
 	r.EqualError(got, "boom")

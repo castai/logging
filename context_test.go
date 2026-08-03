@@ -28,9 +28,6 @@ func TestWithLoggerAndFromContext(t *testing.T) {
 
 func TestFromContextDefaultsWhenAbsent(t *testing.T) {
 	r := require.New(t)
-	// No logger in ctx -> falls back to the lazy package default. We only
-	// assert that a non-nil logger is returned and that emitting does not
-	// panic; we cannot easily intercept stdout of the default logger here.
 	got := FromContext(context.Background())
 	r.NotNil(got)
 	r.NotPanics(func() { got.Debug("default-fallback") })
