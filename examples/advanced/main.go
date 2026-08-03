@@ -21,6 +21,9 @@ func main() {
 		// *time.Location, e.g. time.LoadLocation("Europe/Vilnius").
 		// You can also set your preferred timezone via `LOG_TIMEZONE = Europe/Vilnius` env variable.
 		logging.NewTimeZoneHandler(time.UTC),
+
+		// Attach commit to every message
+		logging.NewCommitHandler(),
 	)
 
 	log.Info("service starting")

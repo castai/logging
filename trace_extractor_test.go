@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 
@@ -78,6 +79,35 @@ func TestSetTraceSpanExtractor_EmptyIDsSuppressed(t *testing.T) {
 	out := buf.String()
 	r.Contains(out, `trace_id=t-only`)
 	r.NotContains(out, `span_id`)
+}
+
+func TestSetTraceSpanExtractor_NoDuplicateOnRepeatedFromContext(t *testing.T) {
+	r := require.New(t)
+	t.Cleanup(func() { SetTraceSpanExtractor(nil) })
+	SetTraceSpanExtractor(stubExtractor{traceID: "trace-abc", spanID: "span-123"})
+
+	var buf bytes.Buffer
+	base := New(NewTextHandler(TextHandlerConfig{
+		Level:  slog.LevelDebug,
+		Output: &buf,
+	}))
+	ctx := WithLogger(context.Background(), base)
+
+	// Round-trip through FromContext/WithLogger repeatedly, as
+	// FromContextWithField/FromContextWithFields do internally. Each round
+	// trip must attach trace_id/span_id at most once, not once per call.
+	ctx, log1 := FromContextWithField(ctx, "step", "one")
+	log1.Info("first")
+	ctx, log2 := FromContextWithField(ctx, "step", "two")
+	log2.Info("second")
+	FromContext(ctx).Info("third")
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	r.Len(lines, 3)
+	for _, line := range lines {
+		r.Equal(1, strings.Count(line, "trace_id="), "line must not carry duplicate trace_id: %s", line)
+		r.Equal(1, strings.Count(line, "span_id="), "line must not carry duplicate span_id: %s", line)
+	}
 }
 
 func TestSetTraceSpanExtractor_NilCtx(t *testing.T) {
