@@ -3,6 +3,7 @@ package logging
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -35,9 +36,9 @@ type TestHook struct {
 	parent     *TestHook   // non-nil on hooks derived via WithAttrs/WithGroup
 }
 
-// NewNullLogger returns a *Logger whose only handler is a TestHook plus a
-// discard-writer text handler ensuring level filtering is not applied. All
-// emitted records are captured by the returned hook.
+// NewNullLogger returns a *Logger whose only handler is a TestHook. All
+// emitted records are captured by the returned hook; nothing is written
+// anywhere else.
 //
 // The returned *Logger accepts records at all levels (debug through error).
 // Use hook.AllEntries() to read them back.
@@ -117,6 +118,9 @@ func (h *TestHook) AllEntries() []TestEntry {
 	defer root.mu.Unlock()
 	out := make([]TestEntry, len(root.entries))
 	copy(out, root.entries)
+	for i := range out {
+		out[i].Attrs = maps.Clone(out[i].Attrs)
+	}
 	return out
 }
 
@@ -128,8 +132,10 @@ func (h *TestHook) LastEntry() *TestEntry {
 	if len(root.entries) == 0 {
 		return nil
 	}
-	// Return a copy to prevent aliasing into the internal slice.
+	// Return a deep copy so mutating the result (including its Attrs map)
+	// cannot alias or race with internal state.
 	e := root.entries[len(root.entries)-1]
+	e.Attrs = maps.Clone(e.Attrs)
 	return &e
 }
 
@@ -169,7 +175,7 @@ func flattenAttr(m map[string]any, groups []string, attr slog.Attr) {
 	switch v.Kind() {
 	case slog.KindGroup:
 		for _, ga := range v.Group() {
-			flattenAttr(m, append(groups, attr.Key), ga)
+			flattenAttr(m, append(slices.Clone(groups), attr.Key), ga)
 		}
 	default:
 		m[key] = v.Any()

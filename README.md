@@ -10,11 +10,12 @@ This package is almost a drop in replacement for logrus. It's based on slog logg
 * JSON format handler (see `NewJSONHandler`).
 * Timezone rewriting handler (see `NewTimeZoneHandler`; also driven by `LOG_TIMEZONE` env var).
 * Env-driven output format via `JSON_LOG=true`.
-* Interfaces for consumer packages: `FieldsLogger`, `FieldLogger`, `BaseLogger` — `*Logger` satisfies them all.
+* `FieldsLogger` interface for consumer packages — `*Logger` satisfies it.
 * Context-aware helpers: `WithLogger`, `FromContext`, `FromContextWithField`, `FromContextWithFields`.
 * Test hook: `NewNullLogger()` returns a logger that captures records for assertions in tests.
 * Pluggable trace/span attach: register a `TraceSpanExtractor` to automatically enrich `FromContext` loggers with `trace_id`/`span_id` fields.
 * `Commit()` helper: read the first 8 chars of the binary's git revision via `debug.ReadBuildInfo` and attach as a log field.
+* `Println(v ...any)`, logged at error level: lets `*Logger` be passed directly where a `promhttp.Logger`-shaped (or `*log.Logger`-shaped) single-method interface is expected, e.g. `promhttp.HandlerOpts{ErrorLog: log}`.
 
 ## Install
 
@@ -30,19 +31,30 @@ See `logging_test.go` for the canonical example.
 
 ```go
 type FieldsLogger interface {
-    BaseLogger
-    With(args ...any) FieldsLogger
-    WithField(key, value string) FieldsLogger
-    WithFieldAny(key string, value any) FieldsLogger
-    WithFields(fields map[string]any) FieldsLogger
-    WithGroup(name string) FieldsLogger
+    Debug(msg string)
+    Debugf(format string, args ...any)
+    Info(msg string)
+    Infof(format string, args ...any)
+    Warn(msg string)
+    Warnf(format string, args ...any)
+    Error(msg string)
+    Errorf(format string, args ...any)
+    Fatal(msg string)
+    Fatalf(format string, args ...any)
+    IsEnabled(lvl slog.Level) bool
+
+    With(args ...any) *Logger
+    WithField(key, value string) *Logger
+    WithFieldAny(key string, value any) *Logger
+    WithFields(fields map[string]any) *Logger
+    WithGroup(name string) *Logger
 }
 
 // Fields is a convenience alias for map[string]any, matching logrus's Fields.
 type Fields = map[string]any
 ```
 
-`*Logger` satisfies `FieldsLogger` (and `FieldLogger`, an alias). Consumer packages should depend on `FieldsLogger` in function parameters and struct fields; production code passes a `*Logger`, tests pass a `NewNullLogger()`-produced logger.
+Derivation methods return the concrete `*Logger` (not the interface), the same way `logrus.FieldLogger.WithField` returns `*logrus.Entry` rather than the interface itself. This is what lets `*Logger` satisfy `FieldsLogger` with no adapter code, while callers still get a concrete, chainable value back. Consumer packages should depend on `FieldsLogger` in function parameters and struct fields; production code passes a `*Logger`, tests pass a `NewNullLogger()`-produced logger.
 
 ## Context helpers
 

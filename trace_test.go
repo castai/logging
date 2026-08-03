@@ -3,9 +3,7 @@ package logging
 import (
 	"bytes"
 	"context"
-	"io"
 	"log/slog"
-	"os"
 	"sync"
 	"testing"
 
@@ -33,7 +31,7 @@ func TestSetTraceSpanExtractor_AttachesFields(t *testing.T) {
 	var buf bytes.Buffer
 	base := New(NewTextHandler(TextHandlerConfig{
 		Level:  slog.LevelDebug,
-		Output: io.MultiWriter(&buf, os.Stdout),
+		Output: &buf,
 	}))
 	ctx := WithLogger(context.Background(), base)
 
@@ -51,7 +49,7 @@ func TestSetTraceSpanExtractor_NoOpWhenUnset(t *testing.T) {
 	var buf bytes.Buffer
 	base := New(NewTextHandler(TextHandlerConfig{
 		Level:  slog.LevelDebug,
-		Output: io.MultiWriter(&buf, os.Stdout),
+		Output: &buf,
 	}))
 	ctx := WithLogger(context.Background(), base)
 
@@ -72,7 +70,7 @@ func TestSetTraceSpanExtractor_EmptyIDsSuppressed(t *testing.T) {
 	var buf bytes.Buffer
 	base := New(NewTextHandler(TextHandlerConfig{
 		Level:  slog.LevelDebug,
-		Output: io.MultiWriter(&buf, os.Stdout),
+		Output: &buf,
 	}))
 	ctx := WithLogger(context.Background(), base)
 

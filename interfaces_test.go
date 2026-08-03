@@ -7,24 +7,22 @@ package logging
 
 import (
 	"bytes"
-	"io"
 	"log/slog"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestLoggerSatisfiesInterfaces(t *testing.T) {
-	// The compile-time assertions in interfaces.go would fail the build if
-	// *Logger did not satisfy the interfaces; this test additionally verifies
+	// The compile-time assertion in interfaces.go would fail the build if
+	// *Logger did not satisfy FieldsLogger; this test additionally verifies
 	// that the interface can be used at a call site and that derivation
-	// preserves interface identity.
+	// still returns something usable through the interface variable.
 	r := require.New(t)
 	var buf bytes.Buffer
 	l := New(NewTextHandler(TextHandlerConfig{
 		Level:  slog.LevelDebug,
-		Output: io.MultiWriter(&buf, os.Stdout),
+		Output: &buf,
 	}))
 
 	var fl FieldsLogger = l

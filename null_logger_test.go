@@ -27,6 +27,22 @@ func TestNullLoggerCapturesRecords(t *testing.T) {
 	r.Equal("v", entries[1].Attrs["k"])
 }
 
+func TestLoggerPrintln(t *testing.T) {
+	r := require.New(t)
+	log, hook := NewNullLogger()
+
+	// Mirrors how promhttp.HandlerOpts.ErrorLog calls Println: a
+	// string label followed by a non-string value, expected to come out
+	// space-joined like fmt.Sprintln/log.Logger.Println, not fmt.Sprint's
+	// space-only-between-non-strings rule.
+	log.Println("error gathering metrics:", errors.New("boom"))
+
+	last := hook.LastEntry()
+	r.NotNil(last)
+	r.Equal(slog.LevelError, last.Level)
+	r.Equal("error gathering metrics: boom", last.Message)
+}
+
 func TestNullLoggerLastEntryAndReset(t *testing.T) {
 	r := require.New(t)
 	log, hook := NewNullLogger()
@@ -78,6 +94,26 @@ func TestNullLoggerCapturesAllLevels(t *testing.T) {
 		levels = append(levels, e.Level)
 	}
 	r.Equal([]slog.Level{slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError}, levels)
+}
+
+func TestNullLoggerLastEntryAttrsNotAliased(t *testing.T) {
+	r := require.New(t)
+	log, hook := NewNullLogger()
+
+	log.WithField("k", "v").Info("hello")
+
+	last := hook.LastEntry()
+	r.NotNil(last)
+	last.Attrs["k"] = "mutated"
+	last.Attrs["injected"] = "boom"
+
+	// A fresh read must not observe the mutation made above.
+	again := hook.LastEntry()
+	r.Equal("v", again.Attrs["k"])
+	r.NotContains(again.Attrs, "injected")
+
+	entries := hook.AllEntries()
+	r.Equal("v", entries[len(entries)-1].Attrs["k"])
 }
 
 func TestNullLoggerCapturesErrorValue(t *testing.T) {

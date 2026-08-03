@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -132,6 +133,21 @@ func (l *Logger) Fatal(msg string) {
 func (l *Logger) Fatalf(msg string, a ...any) {
 	l.doLog(slog.LevelError, msg, a...) //nolint:govet
 	os.Exit(1)
+}
+
+// Println logs its arguments at error level, joined and spaced the same
+// way the standard library's *log.Logger.Println does (via fmt.Sprintln,
+// trailing newline trimmed since handlers terminate lines themselves).
+//
+// This exists so *Logger structurally satisfies the single-method
+// `Println(v ...any)` interfaces several third-party packages expect —
+// most notably promhttp.Logger (github.com/prometheus/client_golang's
+// promhttp.HandlerOpts.ErrorLog), which logrus.Entry/Logger satisfy today
+// only incidentally, via their own Println method. promhttp only ever
+// calls it for genuine scrape/collection errors, hence error level here —
+// this diverges from logrus, whose Println always logs at Info.
+func (l *Logger) Println(v ...any) {
+	l.doLog(slog.LevelError, strings.TrimSuffix(fmt.Sprintln(v...), "\n"))
 }
 
 func (l *Logger) IsEnabled(lvl slog.Level) bool {

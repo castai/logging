@@ -3,9 +3,7 @@ package logging
 import (
 	"bytes"
 	"context"
-	"io"
 	"log/slog"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -16,7 +14,7 @@ func TestWithLoggerAndFromContext(t *testing.T) {
 	var buf bytes.Buffer
 	base := New(NewTextHandler(TextHandlerConfig{
 		Level:  slog.LevelDebug,
-		Output: io.MultiWriter(&buf, os.Stdout),
+		Output: &buf,
 	}))
 
 	ctx := WithLogger(context.Background(), base)
@@ -43,7 +41,7 @@ func TestFromContextWithFieldDerivesAndStores(t *testing.T) {
 	var buf bytes.Buffer
 	base := New(NewTextHandler(TextHandlerConfig{
 		Level:  slog.LevelDebug,
-		Output: io.MultiWriter(&buf, os.Stdout),
+		Output: &buf,
 	}))
 
 	ctx := WithLogger(context.Background(), base)
@@ -65,14 +63,14 @@ func TestFromContextWithFieldsMultipleAttrs(t *testing.T) {
 	var buf bytes.Buffer
 	base := New(NewTextHandler(TextHandlerConfig{
 		Level:  slog.LevelDebug,
-		Output: io.MultiWriter(&buf, os.Stdout),
+		Output: &buf,
 	}))
 	ctx := WithLogger(context.Background(), base)
 
 	ctx, derived := FromContextWithFields(ctx, map[string]any{
-		"node_name":     "node-a",
-		"reconcile_id":  42,
-		"drain_reason":  "cost",
+		"node_name":    "node-a",
+		"reconcile_id": 42,
+		"drain_reason": "cost",
 	})
 	_ = ctx
 	derived.Warn("draining")
@@ -89,7 +87,7 @@ func TestCtxHelpers(t *testing.T) {
 	var buf bytes.Buffer
 	base := New(NewTextHandler(TextHandlerConfig{
 		Level:  slog.LevelDebug,
-		Output: io.MultiWriter(&buf, os.Stdout),
+		Output: &buf,
 	}))
 	ctx := WithLogger(context.Background(), base)
 
