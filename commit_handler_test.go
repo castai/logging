@@ -12,6 +12,8 @@ import (
 	"github.com/castai/logging"
 )
 
+var commitLen = 8
+
 func TestCommitHandler(t *testing.T) {
 	t.Run("attaches commit field from override", func(t *testing.T) {
 		r := require.New(t)
@@ -77,7 +79,7 @@ func TestCommitHandler(t *testing.T) {
 
 func TestCommit(t *testing.T) {
 	r := require.New(t)
-	got := Commit()
+	got := logging.Commit()
 
 	// Under `go test` the vcs.revision setting may or may not be present
 	// depending on the -buildvcs flag and whether the working tree is a
@@ -110,10 +112,10 @@ func TestCommit(t *testing.T) {
 func TestCommitOverride(t *testing.T) {
 	r := require.New(t)
 
-	r.Equal("abcd1234", Commit("abcd1234567890"), "override longer than commitLen must be truncated")
-	r.Equal("abcd", Commit("abcd"), "override shorter than commitLen must be returned as-is")
+	r.Equal("abcd1234", logging.Commit("abcd1234567890"), "override longer than commitLen must be truncated")
+	r.Equal("abcd", logging.Commit("abcd"), "override shorter than commitLen must be returned as-is")
 
 	// An empty override string falls through to the build-info path rather
 	// than being treated as an explicit empty hash.
-	r.Equal(Commit(), Commit(""))
+	r.Equal(logging.Commit(), logging.Commit(""))
 }
