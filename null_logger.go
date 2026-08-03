@@ -22,12 +22,7 @@ type TestEntry struct {
 }
 
 // TestHook captures records for later inspection. Register it as the base
-// handler of a *Logger to observe emitted log lines in tests. It is
-// concurrency-safe.
-//
-// Handlers produced by WithAttrs/WithGroup share the entries slice of the
-// root hook via the parent pointer, so callers who hold the original hook
-// still observe records emitted through derived loggers.
+// handler of a *Logger to observe emitted log lines in tests.
 type TestHook struct {
 	mu         sync.Mutex
 	entries    []TestEntry
@@ -37,11 +32,7 @@ type TestHook struct {
 }
 
 // NewNullLogger returns a *Logger whose only handler is a TestHook. All
-// emitted records are captured by the returned hook; nothing is written
-// anywhere else.
-//
-// The returned *Logger accepts records at all levels (debug through error).
-// Use hook.AllEntries() to read them back.
+// emitted records are captured by the returned hook.
 func NewNullLogger() (*Logger, *TestHook) {
 	hook := &TestHook{}
 	log := New(hook)
@@ -89,9 +80,7 @@ func (h *TestHook) Handle(_ context.Context, r slog.Record) error {
 }
 
 // WithAttrs returns a shallow copy of the hook with the additional attributes
-// remembered for subsequent Handle calls. The derived hook shares the
-// parent's entries slice so tests reading from the original hook see records
-// emitted through derived loggers.
+// remembered for subsequent Handle calls.
 func (h *TestHook) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return &TestHook{
 		baseAttrs:  slices.Concat(h.baseAttrs, attrs),
