@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -17,6 +18,7 @@ func (h HandlerFunc) Register(next slog.Handler) slog.Handler {
 
 // Handler allows to chain multiple handlers.
 // Order of execution is reverse to order of registration meaning first handler is executed last.
+// Please make sure to check existing env variables like `JSON_LOG`.
 type Handler interface {
 	Register(next slog.Handler) slog.Handler
 }
@@ -86,6 +88,10 @@ func chain(handlers []Handler) slog.Handler {
 // for easier migration from logrus.
 type Logger struct {
 	Log *slog.Logger
+
+	// traceAttached records whether trace_id/span_id fields have already
+	// been attached to this logger by attachTraceFields.
+	traceAttached bool
 }
 
 func (l *Logger) Error(msg string) {
@@ -130,6 +136,21 @@ func (l *Logger) Fatalf(msg string, a ...any) {
 	os.Exit(1)
 }
 
+// Println logs its arguments at error level, joined and spaced the same
+// way the standard library's *log.Logger.Println does (via fmt.Sprintln,
+// trailing newline trimmed since handlers terminate lines themselves).
+//
+// This exists so *Logger structurally satisfies the single-method
+// `Println(v ...any)` interfaces several third-party packages expect —
+// most notably promhttp.Logger (github.com/prometheus/client_golang's
+// promhttp.HandlerOpts.ErrorLog), which logrus.Entry/Logger satisfy today
+// only incidentally, via their own Println method. promhttp only ever
+// calls it for genuine scrape/collection errors, hence error level here —
+// this diverges from logrus, whose Println always logs at Info.
+func (l *Logger) Println(v ...any) {
+	l.doLog(slog.LevelError, strings.TrimSuffix(fmt.Sprintln(v...), "\n"))
+}
+
 func (l *Logger) IsEnabled(lvl slog.Level) bool {
 	ctx := context.Background()
 	return l.Log.Handler().Enabled(ctx, lvl)
@@ -154,14 +175,40 @@ func (l *Logger) doLog(lvl slog.Level, msg string, args ...any) {
 	}
 }
 
+// With returns a derived logger with the given slog-style args attached.
 func (l *Logger) With(args ...any) *Logger {
-	return &Logger{Log: l.Log.With(args...)}
+	return &Logger{Log: l.Log.With(args...), traceAttached: l.traceAttached}
 }
 
+// WithField returns a derived logger with a single string-valued field.
+// For non-string values use WithFieldAny.
 func (l *Logger) WithField(k, v string) *Logger {
-	return &Logger{Log: l.Log.With(slog.String(k, v))}
+	return &Logger{Log: l.Log.With(slog.String(k, v)), traceAttached: l.traceAttached}
 }
 
+// WithFieldAny returns a derived logger with a single field whose value may
+// be of any type. Values are handled by slog's default attribute resolution.
+func (l *Logger) WithFieldAny(k string, v any) *Logger {
+	return &Logger{Log: l.Log.With(slog.Any(k, v)), traceAttached: l.traceAttached}
+}
+
+// WithFields returns a derived logger with all entries of the given map
+// attached as attributes.
+func (l *Logger) WithFields(fields map[string]any) *Logger {
+	if len(fields) == 0 {
+		return l
+	}
+
+	attrs := make([]any, 0, len(fields))
+	for k, v := range fields {
+		attrs = append(attrs, slog.Any(k, v))
+	}
+
+	return &Logger{Log: l.Log.With(attrs...), traceAttached: l.traceAttached}
+}
+
+// WithGroup returns a derived logger whose subsequent attributes are grouped
+// under the given name.
 func (l *Logger) WithGroup(name string) *Logger {
-	return &Logger{Log: l.Log.WithGroup(name)}
+	return &Logger{Log: l.Log.WithGroup(name), traceAttached: l.traceAttached}
 }
