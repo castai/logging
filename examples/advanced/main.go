@@ -54,7 +54,6 @@ func main() {
 		go func() { _ = batchClient.Run(ctx) }()
 
 		log = log.WithHandler(logging.NewExportHandler(batchClient, logging.DefaultExportHandlerConfig))
-		log.RegisterExitHandler(logging.NewDefaultExitHandler(log, batchClient, 5*time.Second))
 	}
 
 	log.WithGroup("server").With("port", 8080).Info("listening")

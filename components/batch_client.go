@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log"
-	"sync"
 	"time"
 )
 
@@ -38,9 +37,6 @@ type BatchClient struct {
 	buffer chan Entry
 	client APIClient
 	cfg    BatchClientConfig
-
-	mu      sync.Mutex
-	pending []Entry
 }
 
 func NewBatchClient(client APIClient, opts ...func(*BatchClientConfig)) *BatchClient {
@@ -86,6 +82,7 @@ func (b *BatchClient) run(ctx context.Context) error {
 
 	buffer := b.buffer
 
+	entries := make([]Entry, 0, b.cfg.BatchSize)
 	for {
 		select {
 		case entry, ok := <-buffer:
@@ -96,21 +93,24 @@ func (b *BatchClient) run(ctx context.Context) error {
 			if len(entry.Message) == 0 {
 				continue
 			}
-			b.mu.Lock()
-			b.pending = append(b.pending, entry)
-			full := len(b.pending) >= b.cfg.BatchSize
-			b.mu.Unlock()
-			if full {
-				_ = b.flushPending(ctx)
+			entries = append(entries, entry)
+			if len(entries) >= b.cfg.BatchSize {
+				_ = b.flush(ctx, entries)
+				entries = entries[:0]
 			}
 		case <-ticker.C:
-			_ = b.flushPending(ctx)
+			_ = b.flush(ctx, entries)
+			entries = entries[:0]
 		case <-ctx.Done():
-			b.drainBuffer()
+			b.drainBuffer(&entries)
+			// Use a new context with timeout for graceful shutdown.
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-
-			if flushErr := b.flushPending(shutdownCtx); flushErr != nil {
+			if flushErr := b.flush(shutdownCtx, entries); flushErr != nil {
+				// Join rather than replace: callers should still be able
+				// to see this was a cancellation-triggered shutdown (via
+				// errors.Is(err, context.Canceled)) as well as that the
+				// final flush didn't make it out.
 				return errors.Join(flushErr, ctx.Err())
 			}
 			return ctx.Err()
@@ -118,27 +118,21 @@ func (b *BatchClient) run(ctx context.Context) error {
 	}
 }
 
-func (b *BatchClient) drainBuffer() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+func (b *BatchClient) drainBuffer(entries *[]Entry) {
 	for {
 		select {
-		case entry := <-b.buffer:
-			if len(entry.Message) > 0 {
-				b.pending = append(b.pending, entry)
+		case entry, ok := <-b.buffer:
+			if !ok {
+				return
 			}
-		default: // empty buffer
+			if len(entry.Message) > 0 {
+				*entries = append(*entries, entry)
+			}
+		default:
+			// Buffer is empty.
 			return
 		}
 	}
-}
-
-func (b *BatchClient) flushPending(ctx context.Context) error {
-	b.mu.Lock()
-	entries := b.pending
-	b.pending = nil
-	b.mu.Unlock()
-	return b.flush(ctx, entries)
 }
 
 func (b *BatchClient) flush(ctx context.Context, e []Entry) error {
@@ -151,11 +145,4 @@ func (b *BatchClient) flush(ctx context.Context, e []Entry) error {
 	}
 
 	return nil
-}
-
-// Flush immediately sends everything buffered or pending to APIClient.
-// Safe to call concurrently.
-func (b *BatchClient) Flush(ctx context.Context) error {
-	b.drainBuffer()
-	return b.flushPending(ctx)
 }

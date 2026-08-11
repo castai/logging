@@ -64,7 +64,5 @@ func attachTraceFields(ctx context.Context, l *Logger) *Logger {
 	if spanID != "" {
 		attrs = append(attrs, slog.String("span_id", spanID))
 	}
-	derived := l.derive(l.Log.With(attrs...))
-	derived.traceAttached = true
-	return derived
+	return &Logger{Log: l.Log.With(attrs...), traceAttached: true}
 }

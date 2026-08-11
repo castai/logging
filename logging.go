@@ -72,13 +72,18 @@ func New(handlers ...Handler) *Logger {
 	}
 
 	log := slog.New(slogHandler)
-	return &Logger{Log: log, exitHandlers: newExitHandlerRegistry()}
+	return &Logger{Log: log}
 }
 
 func chain(handlers []Handler) slog.Handler {
 	return registerAll(nil, handlers)
 }
 
+// registerAll folds handlers onto base by calling Register on each in
+// order, so the last handler ends up outermost (executed first) -- the
+// same convention chain/New document. base may be nil (used by chain, via
+// New) or an existing slog.Handler (used by WithHandler, to extend an
+// already-built chain).
 func registerAll(base slog.Handler, handlers []Handler) slog.Handler {
 	h := base
 	for _, handler := range handlers {
@@ -95,16 +100,6 @@ type Logger struct {
 	// traceAttached records whether trace_id/span_id fields have already
 	// been attached to this logger by attachTraceFields.
 	traceAttached bool
-
-	exitHandlers *exitHandlerRegistry
-}
-
-func (l *Logger) derive(newLog *slog.Logger) *Logger {
-	return &Logger{
-		Log:           newLog,
-		traceAttached: l.traceAttached,
-		exitHandlers:  l.exitHandlers,
-	}
 }
 
 func (l *Logger) Error(msg string) {
@@ -139,23 +134,18 @@ func (l *Logger) Warnf(format string, a ...any) {
 	l.doLog(slog.LevelWarn, format, a...)
 }
 
-// Fatal logs msg, runs any handlers registered via RegisterExitHandler then calls os.Exit(1).
+// Fatal logs the slog.LevelError message and then performs os.Exit(1).
+// In most of the cases consider Error(), return err to top lvl and do explicit os.Exit().
 func (l *Logger) Fatal(msg string) {
 	l.doLog(slog.LevelError, msg) //nolint:govet
-	l.exitHandlers.run()
 	os.Exit(1)
 }
 
-// Fatalf logs a formatted message, runs any handlers registered via RegisterExitHandler then calls os.Exit(1).
+// Fatalf logs the slog.LevelError message and then performs os.Exit(1).
+// In most of the cases consider Errorf(), return err to top lvl and do explicit os.Exit().
 func (l *Logger) Fatalf(msg string, a ...any) {
 	l.doLog(slog.LevelError, msg, a...) //nolint:govet
-	l.exitHandlers.run()
 	os.Exit(1)
-}
-
-// RegisterExitHandler registers fn to run before Fatal/Fatalf call os.Exit.
-func (l *Logger) RegisterExitHandler(fn func()) {
-	l.exitHandlers.register(fn)
 }
 
 // Println logs its arguments at error level.
@@ -189,19 +179,19 @@ func (l *Logger) doLog(lvl slog.Level, msg string, args ...any) {
 
 // With returns a derived logger with the given slog-style args attached.
 func (l *Logger) With(args ...any) *Logger {
-	return l.derive(l.Log.With(args...))
+	return &Logger{Log: l.Log.With(args...), traceAttached: l.traceAttached}
 }
 
 // WithField returns a derived logger with a single string-valued field.
 // For non-string values use WithFieldAny.
 func (l *Logger) WithField(k, v string) *Logger {
-	return l.derive(l.Log.With(slog.String(k, v)))
+	return &Logger{Log: l.Log.With(slog.String(k, v)), traceAttached: l.traceAttached}
 }
 
 // WithFieldAny returns a derived logger with a single field whose value may
 // be of any type. Values are handled by slog's default attribute resolution.
 func (l *Logger) WithFieldAny(k string, v any) *Logger {
-	return l.derive(l.Log.With(slog.Any(k, v)))
+	return &Logger{Log: l.Log.With(slog.Any(k, v)), traceAttached: l.traceAttached}
 }
 
 // WithFields returns a derived logger with all entries of the given map
@@ -216,13 +206,13 @@ func (l *Logger) WithFields(fields map[string]any) *Logger {
 		attrs = append(attrs, slog.Any(k, v))
 	}
 
-	return l.derive(l.Log.With(attrs...))
+	return &Logger{Log: l.Log.With(attrs...), traceAttached: l.traceAttached}
 }
 
 // WithGroup returns a derived logger whose subsequent attributes are grouped
 // under the given name.
 func (l *Logger) WithGroup(name string) *Logger {
-	return l.derive(l.Log.WithGroup(name))
+	return &Logger{Log: l.Log.WithGroup(name), traceAttached: l.traceAttached}
 }
 
 // WithError returns a derived logger with an "error" field set.
@@ -236,5 +226,5 @@ func (l *Logger) WithError(err error) *Logger {
 // WithHandler returns a derived logger with each of handlers wrapped around the current handler chain.
 func (l *Logger) WithHandler(handlers ...Handler) *Logger {
 	next := registerAll(l.Log.Handler(), handlers)
-	return l.derive(slog.New(next))
+	return &Logger{Log: slog.New(next), traceAttached: l.traceAttached}
 }
