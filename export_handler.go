@@ -40,9 +40,22 @@ type ExportHandler struct {
 	groups []string
 }
 
+type Flusher interface {
+	Flush(ctx context.Context) error
+}
+
 func (h *ExportHandler) Register(next slog.Handler) slog.Handler {
 	h.next = next
 	return h
+}
+
+func (h *ExportHandler) Flush(ctx context.Context) error {
+	f, ok := h.apiClient.(Flusher)
+	if ok {
+		return f.Flush(ctx)
+	}
+
+	return nil
 }
 
 func (h *ExportHandler) Enabled(ctx context.Context, level slog.Level) bool {

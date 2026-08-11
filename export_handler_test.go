@@ -2,9 +2,11 @@ package logging_test
 
 import (
 	"context"
-	"github.com/stretchr/testify/require"
+	"errors"
 	"log/slog"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/castai/logging"
 	"github.com/castai/logging/components"
@@ -69,6 +71,31 @@ func TestExportHandler(t *testing.T) {
 	r.NotEmpty(log6.Time)
 }
 
+func TestExportHandler_Flush(t *testing.T) {
+	t.Run("no-op when apiClient does not implement Flush", func(t *testing.T) {
+		r := require.New(t)
+		exportHandler := logging.NewExportHandler(&apiClient{}, logging.DefaultExportHandlerConfig)
+		r.NoError(exportHandler.Flush(context.Background()))
+	})
+
+	t.Run("delegates to apiClient's Flush when it implements one", func(t *testing.T) {
+		r := require.New(t)
+		client := &flushableAPIClient{}
+		exportHandler := logging.NewExportHandler(client, logging.DefaultExportHandlerConfig)
+
+		r.NoError(exportHandler.Flush(context.Background()))
+		r.True(client.flushed)
+	})
+
+	t.Run("propagates the underlying Flush error", func(t *testing.T) {
+		r := require.New(t)
+		client := &flushableAPIClient{err: errors.New("boom")}
+		exportHandler := logging.NewExportHandler(client, logging.DefaultExportHandlerConfig)
+
+		r.ErrorIs(exportHandler.Flush(context.Background()), client.err)
+	})
+}
+
 type apiClient struct {
 	logs []components.Entry
 }
@@ -76,4 +103,15 @@ type apiClient struct {
 func (a *apiClient) IngestLogs(ctx context.Context, entries []components.Entry) error {
 	a.logs = append(a.logs, entries...)
 	return nil
+}
+
+type flushableAPIClient struct {
+	apiClient
+	flushed bool
+	err     error
+}
+
+func (a *flushableAPIClient) Flush(ctx context.Context) error {
+	a.flushed = true
+	return a.err
 }

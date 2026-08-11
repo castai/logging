@@ -76,11 +76,19 @@ func New(handlers ...Handler) *Logger {
 }
 
 func chain(handlers []Handler) slog.Handler {
-	var h slog.Handler
+	return registerAll(nil, handlers)
+}
+
+// registerAll folds handlers onto base by calling Register on each in
+// order, so the last handler ends up outermost (executed first) -- the
+// same convention chain/New document. base may be nil (used by chain, via
+// New) or an existing slog.Handler (used by WithHandler, to extend an
+// already-built chain).
+func registerAll(base slog.Handler, handlers []Handler) slog.Handler {
+	h := base
 	for _, handler := range handlers {
 		h = handler.Register(h)
 	}
-
 	return h
 }
 
@@ -126,13 +134,19 @@ func (l *Logger) Warnf(format string, a ...any) {
 	l.doLog(slog.LevelWarn, format, a...)
 }
 
+// Fatal logs msg, runs any handlers registered via RegisterExitHandler,
+// then calls os.Exit(1).
 func (l *Logger) Fatal(msg string) {
 	l.doLog(slog.LevelError, msg) //nolint:govet
+	runExitHandlers()
 	os.Exit(1)
 }
 
+// Fatalf logs a formatted message, runs any handlers registered via
+// RegisterExitHandler, then calls os.Exit(1).
 func (l *Logger) Fatalf(msg string, a ...any) {
 	l.doLog(slog.LevelError, msg, a...) //nolint:govet
+	runExitHandlers()
 	os.Exit(1)
 }
 
@@ -211,4 +225,33 @@ func (l *Logger) WithFields(fields map[string]any) *Logger {
 // under the given name.
 func (l *Logger) WithGroup(name string) *Logger {
 	return &Logger{Log: l.Log.WithGroup(name), traceAttached: l.traceAttached}
+}
+
+func (l *Logger) WithError(err error) *Logger {
+	return l.WithField("error", err.Error())
+}
+
+// WithHandler returns a derived logger with each of handlers wrapped
+// around the current handler chain, in order -- as if they had been
+// passed at the end of the original New(...) call. Like With/WithField/
+// WithGroup, this returns a new *Logger; it does not mutate l, and any
+// logger already derived from l (via With/WithField/WithGroup/etc.) keeps
+// its existing chain -- it will not see handlers added here.
+//
+// This is the intended way to attach a handler that depends on something
+// not available at initial New(...) time -- most concretely an
+// ExportHandler built from an API client that itself depends on config or
+// service discovery completing after the process already needs to log:
+//
+//	log := logging.New(text) // works immediately, no external dependency
+//	...
+//	apiClient, err := components.NewAPIClient(cfg)
+//	if err != nil {
+//		log.Errorf("export disabled: %v", err) // keep running without it
+//	} else {
+//		log = log.WithHandler(logging.NewExportHandler(batchClient, exportCfg))
+//	}
+func (l *Logger) WithHandler(handlers ...Handler) *Logger {
+	next := registerAll(l.Log.Handler(), handlers)
+	return &Logger{Log: slog.New(next), traceAttached: l.traceAttached}
 }
