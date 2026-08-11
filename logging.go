@@ -79,11 +79,6 @@ func chain(handlers []Handler) slog.Handler {
 	return registerAll(nil, handlers)
 }
 
-// registerAll folds handlers onto base by calling Register on each in
-// order, so the last handler ends up outermost (executed first) -- the
-// same convention chain/New document. base may be nil (used by chain, via
-// New) or an existing slog.Handler (used by WithHandler, to extend an
-// already-built chain).
 func registerAll(base slog.Handler, handlers []Handler) slog.Handler {
 	h := base
 	for _, handler := range handlers {

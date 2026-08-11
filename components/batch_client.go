@@ -49,11 +49,13 @@ func NewBatchClient(client APIClient, opts ...func(*BatchClientConfig)) *BatchCl
 		opt(&cfg)
 	}
 
-	return &BatchClient{
+	b := &BatchClient{
 		buffer: make(chan Entry, cfg.BatchSize*2),
 		client: client,
 		cfg:    cfg,
 	}
+
+	return b
 }
 
 func (b *BatchClient) IngestLogs(ctx context.Context, entries []Entry) error {
@@ -80,39 +82,27 @@ func (b *BatchClient) run(ctx context.Context) error {
 	ticker := time.NewTicker(b.cfg.FlushInterval)
 	defer ticker.Stop()
 
-	buffer := b.buffer
-
 	entries := make([]Entry, 0, b.cfg.BatchSize)
 	for {
 		select {
-		case entry, ok := <-buffer:
-			if !ok {
-				buffer = nil
-				continue
-			}
+		case entry := <-b.buffer:
 			if len(entry.Message) == 0 {
 				continue
 			}
 			entries = append(entries, entry)
 			if len(entries) >= b.cfg.BatchSize {
-				_ = b.flush(ctx, entries)
+				b.flush(ctx, entries)
 				entries = entries[:0]
 			}
 		case <-ticker.C:
-			_ = b.flush(ctx, entries)
+			b.flush(ctx, entries)
 			entries = entries[:0]
 		case <-ctx.Done():
 			b.drainBuffer(&entries)
 			// Use a new context with timeout for graceful shutdown.
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			if flushErr := b.flush(shutdownCtx, entries); flushErr != nil {
-				// Join rather than replace: callers should still be able
-				// to see this was a cancellation-triggered shutdown (via
-				// errors.Is(err, context.Canceled)) as well as that the
-				// final flush didn't make it out.
-				return errors.Join(flushErr, ctx.Err())
-			}
+			b.flush(shutdownCtx, entries)
 			return ctx.Err()
 		}
 	}
@@ -121,10 +111,7 @@ func (b *BatchClient) run(ctx context.Context) error {
 func (b *BatchClient) drainBuffer(entries *[]Entry) {
 	for {
 		select {
-		case entry, ok := <-b.buffer:
-			if !ok {
-				return
-			}
+		case entry := <-b.buffer:
 			if len(entry.Message) > 0 {
 				*entries = append(*entries, entry)
 			}
@@ -135,14 +122,11 @@ func (b *BatchClient) drainBuffer(entries *[]Entry) {
 	}
 }
 
-func (b *BatchClient) flush(ctx context.Context, e []Entry) error {
+func (b *BatchClient) flush(ctx context.Context, e []Entry) {
 	if len(e) == 0 {
-		return nil
+		return
 	}
 	if err := b.client.IngestLogs(ctx, e); err != nil {
 		log.Printf("failed to publish logs: %v", err)
-		return err
 	}
-
-	return nil
 }
