@@ -84,9 +84,15 @@ func (b *BatchClient) run(ctx context.Context) error {
 	ticker := time.NewTicker(b.cfg.FlushInterval)
 	defer ticker.Stop()
 
+	buffer := b.buffer
+
 	for {
 		select {
-		case entry := <-b.buffer:
+		case entry, ok := <-buffer:
+			if !ok {
+				buffer = nil
+				continue
+			}
 			if len(entry.Message) == 0 {
 				continue
 			}
@@ -103,7 +109,10 @@ func (b *BatchClient) run(ctx context.Context) error {
 			b.drainBuffer()
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			_ = b.flushPending(shutdownCtx)
+
+			if flushErr := b.flushPending(shutdownCtx); flushErr != nil {
+				return errors.Join(flushErr, ctx.Err())
+			}
 			return ctx.Err()
 		}
 	}

@@ -32,7 +32,7 @@ func main() {
 	go func() { _ = batchClient.Run(ctx) }()
 
 	log = log.WithHandler(logging.NewExportHandler(batchClient, logging.DefaultExportHandlerConfig))
-	logging.RegisterExitHandler(logging.NewDefaultExitHandler(log, batchClient, 5*time.Second))
+	log.RegisterExitHandler(logging.NewDefaultExitHandler(log, batchClient, 5*time.Second))
 
 	for i := 1; i <= 5; i++ {
 		log.Infof("flush-exporter message %d", i)

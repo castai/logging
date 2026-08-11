@@ -8,16 +8,10 @@ import "log/slog"
 // 0=Panic -> slog.LevelInfo, 1=Fatal -> slog.LevelError, 2=Error -> slog.LevelError,
 // 3=Warn -> slog.LevelWarn, 4=Info -> slog.LevelInfo, 5=Debug -> slog.LevelDebug.
 func LvlFromLogrus(level int) slog.Level {
-	oldLvl := level
 	if level < 0 {
 		level = 0
 	} else if level > 5 {
 		level = 5
-	}
-
-	if oldLvl != level {
-		slog.Default().With("log_level", oldLvl).
-			Warn("found legacy logging level, consider migrating to slog value")
 	}
 
 	switch level {

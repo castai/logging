@@ -5,14 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
 	"io"
 	"log/slog"
 	"os"
 	"os/signal"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/castai/logging"
 	"github.com/castai/logging/components"
@@ -230,6 +231,35 @@ func TestLogger(t *testing.T) {
 			}))
 		})
 	})
+
+	t.Run("WithError", func(t *testing.T) {
+		t.Run("nil error is a no-op, not a panic", func(t *testing.T) {
+			r := require.New(t)
+			var buf bytes.Buffer
+			log := logging.New(logging.NewTextHandler(logging.TextHandlerConfig{
+				Level:  logging.MustParseLevel("info"),
+				Output: &buf,
+			}))
+
+			r.NotPanics(func() {
+				log.WithError(nil).Info("still fine")
+			})
+			r.Contains(buf.String(), "msg=\"still fine\"")
+			r.NotContains(buf.String(), "error=")
+		})
+
+		t.Run("non-nil error attaches the error field", func(t *testing.T) {
+			r := require.New(t)
+			var buf bytes.Buffer
+			log := logging.New(logging.NewTextHandler(logging.TextHandlerConfig{
+				Level:  logging.MustParseLevel("info"),
+				Output: &buf,
+			}))
+
+			log.WithError(errors.New("boom")).Error("failed")
+			r.Contains(buf.String(), `error=boom`)
+		})
+	})
 }
 
 type customHandler struct {
@@ -252,4 +282,114 @@ func (c *customHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 
 func (c *customHandler) WithGroup(name string) slog.Handler {
 	return c.next.WithGroup(name)
+}
+
+func TestLogger_WithHandler(t *testing.T) {
+	t.Run("wraps the existing chain, new handler outermost", func(t *testing.T) {
+		r := require.New(t)
+		var buf bytes.Buffer
+		log := logging.New(logging.NewTextHandler(logging.TextHandlerConfig{
+			Level:  slog.LevelDebug,
+			Output: &buf,
+		}))
+
+		log = log.WithHandler(logging.HandlerFunc(func(next slog.Handler) slog.Handler {
+			return &customHandler{name: "attached", next: next}
+		}))
+
+		log.Info("msg")
+		r.Contains(buf.String(), `msg="msg attached"`)
+	})
+
+	t.Run("does not affect a logger already derived before the call", func(t *testing.T) {
+		r := require.New(t)
+		var buf bytes.Buffer
+		base := logging.New(logging.NewTextHandler(logging.TextHandlerConfig{
+			Level:  slog.LevelDebug,
+			Output: &buf,
+		}))
+
+		// Derive a child before attaching the new handler to the parent.
+		child := base.WithField("component", "worker")
+
+		_ = base.WithHandler(logging.HandlerFunc(func(next slog.Handler) slog.Handler {
+			return &customHandler{name: "late", next: next}
+		}))
+
+		child.Info("msg")
+		r.NotContains(buf.String(), "late", "a logger derived before WithHandler must not see the new handler")
+		r.Contains(buf.String(), `msg=msg component=worker`)
+	})
+
+	t.Run("variadic form matches sequential calls", func(t *testing.T) {
+		r := require.New(t)
+		var buf1, buf2 bytes.Buffer
+
+		newHandlerA := func() logging.Handler {
+			return logging.HandlerFunc(func(next slog.Handler) slog.Handler {
+				return &customHandler{name: "a", next: next}
+			})
+		}
+		newHandlerB := func() logging.Handler {
+			return logging.HandlerFunc(func(next slog.Handler) slog.Handler {
+				return &customHandler{name: "b", next: next}
+			})
+		}
+
+		log1 := logging.New(logging.NewTextHandler(logging.TextHandlerConfig{Level: slog.LevelDebug, Output: &buf1}))
+		log1 = log1.WithHandler(newHandlerA(), newHandlerB())
+
+		log2 := logging.New(logging.NewTextHandler(logging.TextHandlerConfig{Level: slog.LevelDebug, Output: &buf2}))
+		log2 = log2.WithHandler(newHandlerA()).WithHandler(newHandlerB())
+
+		log1.Info("msg")
+		log2.Info("msg")
+		r.Equal(buf1.String(), buf2.String())
+	})
+
+	t.Run("attaching a real ExportHandler starts exporting subsequent records", func(t *testing.T) {
+		r := require.New(t)
+		client := &apiClient{}
+		var buf bytes.Buffer
+		log := logging.New(logging.NewTextHandler(logging.TextHandlerConfig{
+			Level:  slog.LevelInfo,
+			Output: &buf,
+		}))
+
+		log.Info("before export attached")
+		r.Empty(client.logs, "nothing should be exported before WithHandler is called")
+
+		log = log.WithHandler(logging.NewExportHandler(client, logging.DefaultExportHandlerConfig))
+		log.Info("after export attached")
+
+		r.Len(client.logs, 1)
+		r.Equal("after export attached", client.logs[0].Message)
+	})
+
+	t.Run("documented limitation: fields/groups set before WithHandler are missing from the newly attached handler's export", func(t *testing.T) {
+		r := require.New(t)
+		client := &apiClient{}
+		log := logging.New(logging.NewTextHandler(logging.TextHandlerConfig{Level: slog.LevelDebug}))
+
+		log = log.WithGroup("api").WithField("service", "checkout")
+		log = log.WithHandler(logging.NewExportHandler(client, logging.DefaultExportHandlerConfig))
+		log.WithField("port", "8080").Info("listening")
+
+		r.Len(client.logs, 1)
+		r.Equal(map[string]string{"port": "8080"}, client.logs[0].Fields,
+			"service and the api group are not visible to a handler attached after they were set -- see WithHandler's doc comment")
+	})
+
+	t.Run("recommended order: attaching before deriving fields/groups sees everything", func(t *testing.T) {
+		r := require.New(t)
+		client := &apiClient{}
+		log := logging.New(logging.NewTextHandler(logging.TextHandlerConfig{Level: slog.LevelDebug}))
+
+		log = log.WithHandler(logging.NewExportHandler(client, logging.DefaultExportHandlerConfig))
+		log = log.WithGroup("api").WithField("service", "checkout")
+		log.WithField("port", "8080").Info("listening")
+
+		r.Len(client.logs, 1)
+		r.Equal(map[string]string{"api.service": "checkout", "api.port": "8080"}, client.logs[0].Fields)
+	})
 }

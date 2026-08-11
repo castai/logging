@@ -9,28 +9,41 @@ import (
 	"time"
 )
 
-var (
-	exitHandlersMu sync.Mutex
-	exitHandlers   []func()
-)
-
-// RegisterExitHandler registers a function to run before log.Fatal
-func RegisterExitHandler(fn func()) {
-	exitHandlersMu.Lock()
-	defer exitHandlersMu.Unlock()
-	exitHandlers = append(exitHandlers, fn)
+type exitHandlerRegistry struct {
+	mu       sync.Mutex
+	handlers []func()
 }
 
-func runExitHandlers() {
-	exitHandlersMu.Lock()
-	handlers := slices.Clone(exitHandlers)
-	exitHandlersMu.Unlock()
+func newExitHandlerRegistry() *exitHandlerRegistry {
+	return &exitHandlerRegistry{}
+}
+
+func (r *exitHandlerRegistry) register(fn func()) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.handlers = append(r.handlers, fn)
+}
+
+func (r *exitHandlerRegistry) run() {
+	r.mu.Lock()
+	handlers := slices.Clone(r.handlers)
+	r.mu.Unlock()
 
 	for _, fn := range handlers {
 		runExitHandler(fn)
 	}
 }
 
+func runExitHandler(fn func()) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			fmt.Fprintln(os.Stderr, "logging: exit handler panicked:", rec)
+		}
+	}()
+	fn()
+}
+
+// NewDefaultExitHandler returns a default exit handler flushing func.
 func NewDefaultExitHandler(log FieldsLogger, f Flusher, timeout time.Duration) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -39,13 +52,4 @@ func NewDefaultExitHandler(log FieldsLogger, f Flusher, timeout time.Duration) f
 			log.Errorf("flush before exit failed: %v", err)
 		}
 	}
-}
-
-func runExitHandler(fn func()) {
-	defer func() {
-		if r := recover(); r != nil {
-			fmt.Fprintln(os.Stderr, "logging: exit handler panicked:", r)
-		}
-	}()
-	fn()
 }

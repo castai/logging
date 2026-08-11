@@ -17,7 +17,7 @@ This package is almost a drop in replacement for logrus. It's based on slog logg
 * `NewCommitHandler()`: attaches the binary's git revision (first 8 chars, via `debug.ReadBuildInfo`) as a `commit` field on every record, resolved once when the handler is constructed; `Commit()` is also available standalone. Both take an optional override for when `vcs.revision` isn't available.
 * `Println(v ...any)`, logged at error level: lets `*Logger` be passed directly where a `promhttp.Logger`-shaped (or `*log.Logger`-shaped) single-method interface is expected, e.g. `promhttp.HandlerOpts{ErrorLog: log}`.
 * `NewExportHandler`/`components.BatchClient.Flush(ctx)`: explicit, on-demand flush of buffered export data.
-* `RegisterExitHandler`: run one-time setup so `Fatal`/`Fatalf` flush buffered export data automatically, mirroring `logrus.RegisterExitHandler`.
+* `Logger.RegisterExitHandler`: run one-time setup so `Fatal`/`Fatalf` flush buffered export data automatically, for that logger and everything derived from it.
 
 ## Install
 
@@ -144,13 +144,15 @@ log := logging.New(text, logging.NewExportHandler(batchClient, logging.DefaultEx
 
 Two ways to make sure buffered data still goes out on a hard exit:
 
-`RegisterExitHandler` (recommended for most call sites)** — set it up once, and every `Fatal`/`Fatalf` call anywhere in the process flushes automatically, mirroring `logrus.RegisterExitHandler`:
+**`RegisterExitHandler`** (recommended for most call sites) — set it up once, and every later `Fatal`/`Fatalf` call on that logger, or on any logger derived from it, flushes automatically:
 
 ```go
-logging.RegisterExitHandler(logging.DefaultExitHandler(log, batchClient, 5*time.Second))
+log.RegisterExitHandler(logging.NewDefaultExitHandler(log, batchClient, 5*time.Second))
 
-// Anywhere else in the process, later:
+// Anywhere else, on log or a logger derived from it, later:
 log.Fatal("unrecoverable error") // flushes automatically before exiting
 ```
 
-Explicit flush (for tighter, non-global control)** — skip `Fatal`/`Fatalf` at that specific call site and sequence it yourself:
+Unlike `logrus.RegisterExitHandler` (package-level, process-wide — any `logrus.Fatal` anywhere runs every handler ever registered), this is a `*Logger` method: handlers are shared by that logger and everything derived from it via `With`/`WithField`/`WithGroup`/`WithHandler`/etc. (in either direction — it doesn't matter whether a child was derived before or after the handler was registered), but **not** with loggers from a separate `New(...)` call. `Fatal` on an unrelated logger won't run these. Handlers run in registration order, each isolated by its own `recover()` so one panicking handler can't block the rest.
+
+**Explicit flush** (for a single call site, no registration) — skip `Fatal`/`Fatalf` there and sequence it yourself: log via `Error`/`Errorf`, call `batchClient.Flush(ctx)` (or `exportHandler.Flush(ctx)`) with a bounded timeout, then `os.Exit` — `defer`-ing the flush in `main` does not work as a substitute, since `os.Exit` skips every deferred function in the program.

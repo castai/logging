@@ -157,6 +157,30 @@ func Test_BufferedClient_PublishLogs(t *testing.T) {
 		r.Len(sentLogs, 10, "all buffered entries should be flushed on shutdown")
 	})
 
+	t.Run("shutdown flush error is joined with ctx.Err(), not discarded", func(t *testing.T) {
+		r := require.New(t)
+		mockAPIClient := &erroringAPIClient{err: errors.New("boom")}
+		client := components.NewBatchClient(mockAPIClient, components.BatchSize(100), components.FlushInterval(time.Hour))
+
+		ctx, cancel := context.WithCancel(context.Background())
+		errc := make(chan error, 1)
+		go func() {
+			errc <- client.Run(ctx)
+		}()
+
+		r.NoError(client.IngestLogs(ctx, []components.Entry{{
+			Level:   "info",
+			Message: "test message",
+			Time:    time.Now(),
+		}}))
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+
+		err := <-errc
+		r.ErrorIs(err, context.Canceled, "callers must still be able to tell this was a cancellation")
+		r.ErrorIs(err, mockAPIClient.err, "the final flush's error must not be silently discarded")
+	})
+
 	t.Run("should timeout when buffer is full", func(t *testing.T) {
 		r := require.New(t)
 		mockAPIClient := &slowAPIClient{delay: 30 * time.Second} // Very slow to keep buffer full
