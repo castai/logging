@@ -142,11 +142,9 @@ go batchClient.Run(ctx) // runs until ctx is cancelled
 log := logging.New(text, logging.NewExportHandler(batchClient, logging.DefaultExportHandlerConfig))
 ```
 
-`batchClient.Run(ctx)` already flushes gracefully when `ctx` is cancelled (a normal SIGTERM/shutdown sequence). But **`Logger.Fatal`/`Fatalf` call `os.Exit(1)`**, which by default skips that — same limitation most Go loggers have (`zap.Logger.Fatal` doesn't auto-sync either: [uber-go/zap#1247](https://github.com/uber-go/zap/issues/1247)).
-
 Two ways to make sure buffered data still goes out on a hard exit:
 
-**`RegisterExitHandler` (recommended for most call sites)** — set it up once, and every `Fatal`/`Fatalf` call anywhere in the process flushes automatically, mirroring `logrus.RegisterExitHandler`:
+`RegisterExitHandler` (recommended for most call sites)** — set it up once, and every `Fatal`/`Fatalf` call anywhere in the process flushes automatically, mirroring `logrus.RegisterExitHandler`:
 
 ```go
 logging.RegisterExitHandler(logging.DefaultExitHandler(log, batchClient, 5*time.Second))
@@ -155,20 +153,4 @@ logging.RegisterExitHandler(logging.DefaultExitHandler(log, batchClient, 5*time.
 log.Fatal("unrecoverable error") // flushes automatically before exiting
 ```
 
-`DefaultExitHandler(log FieldsLogger, f Flusher, timeout time.Duration) func()` builds the "flush with a bounded timeout, log if it fails" closure for you — `f` is anything satisfying the exported `Flusher` interface (`Flush(ctx context.Context) error`), which both `*components.BatchClient` and `*ExportHandler` implement. Pass your own `func()` to `RegisterExitHandler` instead if you need different behavior (multiple flushers, a different failure handling strategy, etc.).
-
-Handlers run in registration order before `os.Exit`, each isolated by its own `recover()` so one panicking handler can't block the rest. This is process-wide, like `SetTraceSpanExtractor` — registering here affects `Fatal`/`Fatalf` on every `*Logger`, not just one instance, so it's meant to be set up once at startup, not per call site.
-
-**Explicit flush (for tighter, non-global control)** — skip `Fatal`/`Fatalf` at that specific call site and sequence it yourself:
-
-```go
-log.Errorf("unrecoverable: %v", err) // not log.Fatal — that exits before you can flush
-ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-defer cancel()
-_ = batchClient.Flush(ctx)
-os.Exit(1)
-```
-
-Note `defer batchClient.Flush(ctx)` in `main` does **not** work as a substitute for either of the above: `os.Exit` skips every deferred function in the program, not just ones registered after the call site.
-
-`BatchClient.Flush(ctx)` is safe to call while `Run` is still active elsewhere (the common case) and safe to call concurrently with itself. `ExportHandler.Flush(ctx)` is a thin convenience that delegates to the underlying client's `Flush` if it has one (e.g. `*components.BatchClient`), for callers who only kept a reference to the handler/logger rather than the batch client itself.
+Explicit flush (for tighter, non-global control)** — skip `Fatal`/`Fatalf` at that specific call site and sequence it yourself:
