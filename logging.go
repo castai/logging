@@ -213,7 +213,7 @@ func (l *Logger) WithGroup(name string) *Logger {
 // WithError returns a derived logger with an "error" field set.
 func (l *Logger) WithError(err error) *Logger {
 	if err == nil {
-		return l
+		return &Logger{Log: l.Log, traceAttached: l.traceAttached}
 	}
 	return l.WithField("error", err.Error())
 }
