@@ -76,11 +76,14 @@ func New(handlers ...Handler) *Logger {
 }
 
 func chain(handlers []Handler) slog.Handler {
-	var h slog.Handler
+	return registerAll(nil, handlers)
+}
+
+func registerAll(base slog.Handler, handlers []Handler) slog.Handler {
+	h := base
 	for _, handler := range handlers {
 		h = handler.Register(h)
 	}
-
 	return h
 }
 
@@ -126,27 +129,21 @@ func (l *Logger) Warnf(format string, a ...any) {
 	l.doLog(slog.LevelWarn, format, a...)
 }
 
+// Fatal logs the slog.LevelError message and then performs os.Exit(1).
+// In most of the cases consider Error(), return err to top lvl and do explicit os.Exit().
 func (l *Logger) Fatal(msg string) {
 	l.doLog(slog.LevelError, msg) //nolint:govet
 	os.Exit(1)
 }
 
+// Fatalf logs the slog.LevelError message and then performs os.Exit(1).
+// In most of the cases consider Errorf(), return err to top lvl and do explicit os.Exit().
 func (l *Logger) Fatalf(msg string, a ...any) {
 	l.doLog(slog.LevelError, msg, a...) //nolint:govet
 	os.Exit(1)
 }
 
-// Println logs its arguments at error level, joined and spaced the same
-// way the standard library's *log.Logger.Println does (via fmt.Sprintln,
-// trailing newline trimmed since handlers terminate lines themselves).
-//
-// This exists so *Logger structurally satisfies the single-method
-// `Println(v ...any)` interfaces several third-party packages expect —
-// most notably promhttp.Logger (github.com/prometheus/client_golang's
-// promhttp.HandlerOpts.ErrorLog), which logrus.Entry/Logger satisfy today
-// only incidentally, via their own Println method. promhttp only ever
-// calls it for genuine scrape/collection errors, hence error level here —
-// this diverges from logrus, whose Println always logs at Info.
+// Println logs its arguments at error level.
 func (l *Logger) Println(v ...any) {
 	l.doLog(slog.LevelError, strings.TrimSuffix(fmt.Sprintln(v...), "\n"))
 }
@@ -211,4 +208,18 @@ func (l *Logger) WithFields(fields map[string]any) *Logger {
 // under the given name.
 func (l *Logger) WithGroup(name string) *Logger {
 	return &Logger{Log: l.Log.WithGroup(name), traceAttached: l.traceAttached}
+}
+
+// WithError returns a derived logger with an "error" field set.
+func (l *Logger) WithError(err error) *Logger {
+	if err == nil {
+		return &Logger{Log: l.Log, traceAttached: l.traceAttached}
+	}
+	return l.WithField("error", err.Error())
+}
+
+// WithHandler returns a derived logger with each of handlers wrapped around the current handler chain.
+func (l *Logger) WithHandler(handlers ...Handler) *Logger {
+	next := registerAll(l.Log.Handler(), handlers)
+	return &Logger{Log: slog.New(next), traceAttached: l.traceAttached}
 }

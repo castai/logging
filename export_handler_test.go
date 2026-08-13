@@ -2,9 +2,10 @@ package logging_test
 
 import (
 	"context"
-	"github.com/stretchr/testify/require"
 	"log/slog"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/castai/logging"
 	"github.com/castai/logging/components"
