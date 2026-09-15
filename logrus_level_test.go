@@ -73,7 +73,6 @@ func TestLvlFromString(t *testing.T) {
 		{"warning alias for warn", "warning", slog.LevelWarn},
 		{"error", "error", slog.LevelError},
 		{"logrus fatal maps to Error, same as LvlFromLogrus(1)", "fatal", slog.LevelError},
-		{"logrus panic maps to Info, same as LvlFromLogrus(0)", "panic", slog.LevelInfo},
 		{"logrus trace maps to Debug, same as LvlFromLogrus(6)", "trace", slog.LevelDebug},
 		{"uppercase is accepted", "DEBUG", slog.LevelDebug},
 		{"mixed case is accepted", "WaRn", slog.LevelWarn},

@@ -36,23 +36,20 @@ func LvlFromLogrus(level int) slog.Level {
 }
 
 // LvlFromString parses a case-insensitive level name into a slog.Level.
-// It supports both string (usual logging lvls) and int (legacy logrus).
 func LvlFromString(level string) slog.Level {
 	switch strings.ToLower(strings.TrimSpace(level)) {
-	case "panic":
-		return LvlFromLogrus(0)
 	case "fatal":
-		return LvlFromLogrus(1)
+		return slog.LevelError
 	case "error":
-		return LvlFromLogrus(2)
+		return slog.LevelError
 	case "warn", "warning":
-		return LvlFromLogrus(3)
+		return slog.LevelWarn
 	case "info":
-		return LvlFromLogrus(4)
+		return slog.LevelInfo
 	case "debug":
-		return LvlFromLogrus(5)
+		return slog.LevelDebug
 	case "trace":
-		return LvlFromLogrus(6)
+		return slog.LevelDebug
 	default:
 		return LvlFromLogrus(0)
 	}
