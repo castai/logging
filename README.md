@@ -157,3 +157,21 @@ concretely an `ExportHandler` built from an API client that itself depends on co
 after the process already needs to log:
 
 See `examples/advanced/main.go` for the full pattern.
+
+## Export levels
+
+`ExportHandlerConfig.MinLevel` is independent of the base (stdout) handler's level — it can be set lower to capture more
+verbose data remotely than what's printed locally (e.g. stdout at `warn`, export at `debug`), higher, or equal.
+Records below the stdout level are exported and simply not forwarded to stdout. Configs with `MinLevel >= base level`
+behave exactly as before.
+
+Ordering and contract notes:
+
+* `RateLimitHandler` placed below (inside) an `ExportHandler` rate-limits stdout only — rate-limited records are
+  still exported. To rate-limit exports too, attach the rate limiter above the export handler (e.g. call
+  `WithHandler(NewRateLimitHandler(...))` after attaching export).
+* `slog.Handler.Enabled` may be called more than once per record (the exporter re-checks the next chain before
+  forwarding, and `Logger.IsEnabled` also invokes it outside the emit path), so custom handlers must keep `Enabled`
+  side-effect free. `RateLimitHandler` in this package follows that contract: rate tokens are consumed in `Handle`.
+
+See `examples/levels_demo` for a runnable client/server demo of the independent levels.

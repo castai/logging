@@ -49,7 +49,7 @@ func (h *ExportHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	if h.next == nil {
 		return true
 	}
-	return h.next.Enabled(ctx, level)
+	return level >= h.cfg.MinLevel || h.next.Enabled(ctx, level)
 }
 
 func (h *ExportHandler) Handle(ctx context.Context, record slog.Record) error {
@@ -60,8 +60,11 @@ func (h *ExportHandler) Handle(ctx context.Context, record slog.Record) error {
 	if h.next == nil {
 		return err
 	}
-	if handleErr := h.next.Handle(ctx, record); handleErr != nil {
-		err = errors.Join(err, handleErr)
+
+	if h.next.Enabled(ctx, record.Level) {
+		if handleErr := h.next.Handle(ctx, record); handleErr != nil {
+			err = errors.Join(err, handleErr)
+		}
 	}
 	return err
 }

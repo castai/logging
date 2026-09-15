@@ -392,4 +392,26 @@ func TestLogger_WithHandler(t *testing.T) {
 		r.Len(client.logs, 1)
 		r.Equal(map[string]string{"api.service": "checkout", "api.port": "8080"}, client.logs[0].Fields)
 	})
+
+	t.Run("export MinLevel below base level: remote-only records are exported but not printed", func(t *testing.T) {
+		r := require.New(t)
+		client := &apiClient{}
+		var buf bytes.Buffer
+		log := logging.New(logging.NewTextHandler(logging.TextHandlerConfig{
+			Level:  slog.LevelInfo,
+			Output: &buf,
+		}))
+
+		log = log.WithHandler(logging.NewExportHandler(client, logging.ExportHandlerConfig{
+			MinLevel: slog.LevelDebug,
+		}))
+		log.Debug("debug msg")
+		log.Info("info msg")
+
+		r.Len(client.logs, 2, "debug and info records are both exported")
+		r.Equal("debug msg", client.logs[0].Message)
+		r.Equal("info msg", client.logs[1].Message)
+		r.NotContains(buf.String(), "debug msg", "remote-only record must not be printed to stdout")
+		r.Contains(buf.String(), "info msg")
+	})
 }
