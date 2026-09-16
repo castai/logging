@@ -60,3 +60,58 @@ func TestLevelFromLogrusInt_UsableAsHandlerLevel(t *testing.T) {
 	}))
 	r.True(log.IsEnabled(slog.LevelDebug))
 }
+
+func TestLvlFromString(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  slog.Level
+	}{
+		{"debug", "debug", slog.LevelDebug},
+		{"info", "info", slog.LevelInfo},
+		{"warn", "warn", slog.LevelWarn},
+		{"warning alias for warn", "warning", slog.LevelWarn},
+		{"error", "error", slog.LevelError},
+		{"logrus fatal maps to Error, same as LvlFromLogrus(1)", "fatal", slog.LevelError},
+		{"logrus trace maps to Debug, same as LvlFromLogrus(6)", "trace", slog.LevelDebug},
+		{"uppercase is accepted", "DEBUG", slog.LevelDebug},
+		{"mixed case is accepted", "WaRn", slog.LevelWarn},
+		{"surrounding whitespace is trimmed", "  info  ", slog.LevelInfo},
+		{"unrecognized input falls back to Info, same as an unset legacy int", "bogus", slog.LevelInfo},
+		{"empty string falls back to Info", "", slog.LevelInfo},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, logging.LvlFromString(tt.input))
+		})
+	}
+}
+
+func TestLvlFromAny(t *testing.T) {
+	tests := []struct {
+		name  string
+		input any
+		want  slog.Level
+	}{
+		{"string routes to LvlFromString", "warn", slog.LevelWarn},
+		{"string is case-insensitive", "DEBUG", slog.LevelDebug},
+		{"int routes to LvlFromLogrus", 5, slog.LevelDebug},
+		{"legacy zero int still maps to Info", 0, slog.LevelInfo},
+		{"unrecognized type falls back to Info", 3.14, slog.LevelInfo},
+		{"nil falls back to Info", nil, slog.LevelInfo},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, logging.LvlFromAny(tt.input))
+		})
+	}
+}
+
+func TestLvlFromAny_AgreesWithUnderlyingParsers(t *testing.T) {
+	r := require.New(t)
+
+	r.Equal(logging.LvlFromLogrus(4), logging.LvlFromAny(4))
+	r.Equal(logging.LvlFromString("error"), logging.LvlFromAny("error"))
+}

@@ -56,21 +56,36 @@ func (h *RateLimitHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	if h.next == nil {
 		return true
 	}
-	if !h.next.Enabled(ctx, level) {
-		return false
-	}
-	if !h.rt[level].Allow() {
-		h.droppedLogsCounters[level].Add(1)
-		return false
-	}
-	return true
+	return h.next.Enabled(ctx, level)
 }
 
 func (h *RateLimitHandler) Handle(ctx context.Context, record slog.Record) error {
 	if h.next == nil {
 		return nil
 	}
+	lvl := normalizeLevel(record.Level)
+	if !h.rt[lvl].Allow() {
+		h.droppedLogsCounters[lvl].Add(1)
+		return nil
+	}
 	return h.next.Handle(ctx, record)
+}
+
+// normalizeLevel buckets a custom slog.Level (e.g. slog.Level(12)) into the
+// nearest of the four levels the limiter tracks, mirroring the ranges used
+// by mapSlogLevel in export_handler.go. Prevents a nil-map-lookup panic on
+// levels missing from the rt map.
+func normalizeLevel(level slog.Level) slog.Level {
+	switch {
+	case level >= slog.LevelError:
+		return slog.LevelError
+	case level >= slog.LevelWarn:
+		return slog.LevelWarn
+	case level >= slog.LevelInfo:
+		return slog.LevelInfo
+	default:
+		return slog.LevelDebug
+	}
 }
 
 func (h *RateLimitHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
