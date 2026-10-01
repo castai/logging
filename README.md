@@ -22,7 +22,12 @@ library.
 * `Println(v ...any)`, logged at error level: lets `*Logger` be passed directly where a `promhttp.Logger`-shaped (or
   `*log.Logger`-shaped) single-method interface is expected, e.g. `promhttp.HandlerOpts{ErrorLog: log}`.
 * `NewExportHandler`: forwards records to a remote ingest API, paired with `components.BatchClient` for buffered batch
-  sends.
+  sends. For services where logging must never block application work, build the client with
+  `components.DropWhenFull()` (entries that do not fit are dropped instead of blocking), optionally with
+  `components.BufferSize(n)` and `components.OnDrop(fn)` for drop counts per call; `BatchClient.Dropped()` returns the
+  running total. Each send is bounded by `RequestTimeout` and the exit flush by `ShutdownTimeout`.
+  `components.MaxInFlight(n)` sends up to n batches at once (opt-in, default 1); batches may arrive out of order and
+  each slot retries independently, so keep n small.
 * `Logger.WithHandler`: attach additional handlers to an already-built logger, e.g. wiring up export once an API client
   is ready.
 
