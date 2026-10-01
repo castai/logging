@@ -47,7 +47,7 @@ func (h *ExportHandler) Register(next slog.Handler) slog.Handler {
 
 func (h *ExportHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	if h.next == nil {
-		return true
+		return level >= h.cfg.MinLevel
 	}
 	return level >= h.cfg.MinLevel || h.next.Enabled(ctx, level)
 }
