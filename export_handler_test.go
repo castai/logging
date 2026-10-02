@@ -147,3 +147,25 @@ func TestExportHandler_HonorsNextEnabledBeforeForwarding(t *testing.T) {
 	// ...but the handler denying them via Enabled never sees Handle calls.
 	r.Zero(deny.handled)
 }
+
+func TestExportHandler_EnabledWithoutNext(t *testing.T) {
+	tests := []struct {
+		name     string
+		minLevel slog.Level
+		level    slog.Level
+		want     bool
+	}{
+		{"info min, debug", slog.LevelInfo, slog.LevelDebug, false},
+		{"info min, info", slog.LevelInfo, slog.LevelInfo, true},
+		{"info min, warn", slog.LevelInfo, slog.LevelWarn, true},
+		{"info min, error", slog.LevelInfo, slog.LevelError, true},
+		{"warn min, info", slog.LevelWarn, slog.LevelInfo, false},
+		{"warn min, warn", slog.LevelWarn, slog.LevelWarn, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := logging.NewExportHandler(&apiClient{}, logging.ExportHandlerConfig{MinLevel: tt.minLevel})
+			require.Equal(t, tt.want, h.Enabled(context.Background(), tt.level))
+		})
+	}
+}
